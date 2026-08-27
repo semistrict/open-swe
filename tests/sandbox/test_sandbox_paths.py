@@ -29,10 +29,12 @@ class _FakeSandboxBackend:
         provider: _FakeProvider | None = None,
         shell_paths: dict[str, str] | None = None,
         writable_dirs: set[str] | None = None,
+        virtual_mode: bool = False,
     ) -> None:
         self.sandbox = provider
         self.shell_paths = shell_paths or {}
         self.writable_dirs = writable_dirs or set()
+        self.virtual_mode = virtual_mode
         self.commands: list[str] = []
 
     @property
@@ -102,6 +104,15 @@ async def test_resolve_sandbox_work_dir_caches_the_result() -> None:
     assert first == "/workspace"
     assert second == "/workspace"
     assert backend.commands == ["test -d /workspace && test -w /workspace"]
+
+
+async def test_resolve_sandbox_work_dir_uses_virtual_filesystem_root() -> None:
+    backend = _FakeSandboxBackend(virtual_mode=True)
+
+    work_dir = await aresolve_sandbox_work_dir(cast(SandboxBackendProtocol, backend))
+
+    assert work_dir == "/"
+    assert backend.commands == []
 
 
 async def test_aresolve_repo_dir_resolves_home_dir() -> None:

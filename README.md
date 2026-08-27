@@ -139,6 +139,7 @@ This is an area where you can extend Open SWE for your org: add deterministic CI
 
 - **[Installation Guide](docs/INSTALLATION.md)** — local dev (backend + dashboard), GitHub App creation, LangSmith, Linear/Slack/GitHub triggers, and production deployment
 - **macOS Desktop beta** — clone this repository and run `make install-desktop` from the root to install or update the app
+- **T3 Code** — run `pnpm run t3` for the bundled local backend, or `pnpm run t3 -- --backend-url https://open-swe.example.com` to sign in once and use a remote Open SWE deployment. For a directly exposed LangGraph API, use `--open-swe-api-url` with optional `--open-swe-api-token`.
 - **[Customization Guide](docs/CUSTOMIZATION.md)** — swap the sandbox, model, tools, triggers, system prompt, and middleware for your org
 
 ## License

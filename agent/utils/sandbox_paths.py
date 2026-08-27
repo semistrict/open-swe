@@ -28,6 +28,9 @@ async def aresolve_sandbox_work_dir(sandbox_backend: SandboxBackendProtocol) -> 
     cached_work_dir = getattr(sandbox_backend, _WORK_DIR_CACHE_ATTR, None)
     if isinstance(cached_work_dir, str) and cached_work_dir:
         return cached_work_dir
+    if getattr(sandbox_backend, "virtual_mode", False) is True:
+        _cache_work_dir(sandbox_backend, "/")
+        return "/"
 
     checked_candidates: list[str] = []
     async for candidate in _iter_work_dir_candidates(sandbox_backend):

@@ -3,6 +3,7 @@
 # dependencies
 /node_modules
 **/node_modules
+/.pnpm-store/
 /.pnp
 .pnp.js
 .yarn/install-state.gz
@@ -58,6 +59,7 @@ credentials.json
 
 # LangGraph API
 .langgraph_api
+/.t3code/
 
 **/.claude/settings.local.json
 
