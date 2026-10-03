@@ -1,5 +1,5 @@
 #!/bin/sh
-# One-time setup of a checkout or worktree for `make dev` / `make dev-ui`. Safe to rerun:
+# One-time setup of a checkout or worktree for `mise run dev` / `mise run dev-ui`. Safe to rerun:
 # it installs dependencies and fills in only what .env is missing, never overwriting a value.
 set -eu
 cd "$(git rev-parse --show-toplevel)"
@@ -59,7 +59,7 @@ if [ -z "${POSTGRES_URI:-$(value POSTGRES_URI)}" ]; then
   need docker https://docs.docker.com/get-docker/
   need lsof https://github.com/lsof-org/lsof
   docker info >/dev/null 2>&1 || fail "the Docker daemon is not running; start it and rerun"
-  state=${DEV_STATE_DIR:?run this through make dev-init}
+  state=${DEV_STATE_DIR:?run this through mise run dev-init}
   mkdir -p "$state"
   if [ ! -s "$state/postgres-port" ]; then
     port=54320
@@ -73,7 +73,7 @@ if [ -z "${POSTGRES_URI:-$(value POSTGRES_URI)}" ]; then
 fi
 
 # Without a provider key, OpenAI models run on a ChatGPT subscription. Share the token
-# store Deep Agents Code signs in to when there is one; `make chatgpt-login` writes it otherwise.
+# store Deep Agents Code signs in to when there is one; `mise run chatgpt-login` writes it otherwise.
 models="ANTHROPIC_API_KEY OPENAI_API_KEY GOOGLE_API_KEY GROQ_API_KEY FIREWORKS_API_KEY BASETEN_API_KEY"
 configured=""
 for key in $models; do configured="$configured$(value "$key")"; done
@@ -83,7 +83,7 @@ if [ -z "$configured" ]; then
   fill OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE "$store"
   token_file=$(value OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE)
   case $token_file in "~/"*) token_file="$HOME/${token_file#"~/"}" ;; esac
-  [ -e "$token_file" ] || echo "dev-init: no model key in .env; sign in with ChatGPT: make chatgpt-login" >&2
+  [ -e "$token_file" ] || echo "dev-init: no model key in .env; sign in with ChatGPT: mise run chatgpt-login" >&2
 fi
 
-echo "dev-init: done. Start with 'mise run dev-ui' or 'make dev-ui'."
+echo "dev-init: done. Start with 'mise run dev-ui'."

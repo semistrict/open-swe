@@ -38,8 +38,8 @@ session. It is refused unless `langgraph dev` is the runtime, and the
    Startup aborts with `ALLOWED_GITHUB_ORGS or ALLOWED_GITHUB_USERS must be configured`
    when the allowlist is missing.
 
-4. Start the backend. `make dev` covers this when 2024 is free and you want its
-   postgres container; otherwise run it directly:
+4. Start the backend. `mise run dev` covers this when 2024 is free and you want its
+   postgres container (after `mise run dev-init` once); otherwise run it directly:
 
    ```bash
    uv run langgraph dev --no-browser --port 2026 --n-jobs-per-worker 10
@@ -58,7 +58,7 @@ session. It is refused unless `langgraph dev` is the runtime, and the
 ## Postgres
 
 Each checkout has its own container, project `open-swe-<hash>`, on the loopback port
-`make dev-init` wrote to `~/.open-swe/<checkout>-<hash>/postgres-port`. `make dev` starts it
+`mise run dev-init` wrote to `~/.open-swe/<checkout>-<hash>/postgres-port`. `mise run dev` starts it
 and sets `POSTGRES_URI` unless `.env` sets one. Find this checkout's:
 
 ```bash
@@ -94,7 +94,7 @@ is stubbed; runs cost money and take minutes.
    `PrepareReviewerRunMiddleware.before_agent`, so the agent never starts and the
    review settles with zero findings — which reads exactly like a model that chose to
    say nothing. Either use `local`, or expose the dashboard on a real hostname
-   (`make tunnel`, see docs/DEVELOPMENT.md) before using `langsmith`.
+   (`mise run tunnel`, see docs/DEVELOPMENT.md) before using `langsmith`.
 
 3. Get a session cookie, then post the trigger. Mutations are CSRF-checked against
    `DASHBOARD_BASE_URL`, so send a matching `Origin` — without it you get

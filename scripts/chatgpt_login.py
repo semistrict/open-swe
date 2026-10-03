@@ -7,7 +7,7 @@ from pathlib import Path
 from langchain_openai.chatgpt_oauth import login_chatgpt
 
 if len(sys.argv) != 2 or not sys.argv[1]:
-    sys.exit("usage: make chatgpt-login (reads OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE from .env)")
+    sys.exit("usage: mise run chatgpt-login (reads OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE from .env)")
 
 store = Path(sys.argv[1]).expanduser()
 login_chatgpt(store_path=store)

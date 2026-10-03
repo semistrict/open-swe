@@ -57,7 +57,7 @@ uv run python -m evals.reviewer.run_eval
 ```
 
 `max_concurrency` defaults to 10, matching the `--n-jobs-per-worker 10` that
-`make dev` starts the local server with; each PR is one server run, so a higher
+`mise run dev` starts the local server with; each PR is one server run, so a higher
 eval concurrency only queues on the server.
 
 Smoke-test with 3 PRs first:
@@ -126,7 +126,7 @@ experiment finishes. It records `cost_usd` and `total_tokens` feedback per
 example and writes `cost_total_usd`, `cost_mean_per_pr_usd`,
 `cost_median_per_pr_usd`, `cost_max_per_pr_usd`, and `cost_priced_prs` into
 the experiment metadata. The project defaults to `LANGSMITH_PROJECT` from
-`.env`, which is what local `make dev` traces into; pass
+`.env`, which is what local `mise run dev` traces into; pass
 `--reviewer-langsmith-project` for a deployment. Costs cover LLM calls only,
 not sandbox time. LangSmith can lag while pricing traces; re-run the lookup
 for an experiment with:

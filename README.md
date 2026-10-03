@@ -30,7 +30,7 @@ Open SWE turns engineering work into a repeatable system: investigate a codebase
 ## Getting started
 
 - **[Deploy for a team](docs/INSTALLATION.md)** — Set up the backend, dashboard, GitHub and Slack apps, and model credentials. Production standalone Agent Server deployments require a license key.
-- **[Develop locally](docs/DEVELOPMENT.md)** — Follow the ordered setup for dependencies, credentials, the database, hot reload, and a webhook-only tunnel.
+- **[Develop locally](docs/DEVELOPMENT.md)** — With [mise](https://mise.jdx.dev/) installed, `mise run dev-init` once per checkout, then `mise run dev-ui`. The guide covers credentials, the per-checkout database, hot reload, and a webhook-only tunnel. The Makefile remains for compatibility but is not recommended.
 - **[Desktop (experimental)](docs/DEVELOPMENT.md#desktop-app-experimental)** — Work against local repositories. Packaged app releases target macOS; source builds also support Windows and Linux.
 - **[Use the CLI](cli/README.md)** — Connect a local directory to an agent on your deployment. Commands execute locally as you, without sandbox isolation.
 

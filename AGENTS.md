@@ -10,7 +10,7 @@ Each thread uses an isolated sandbox. A separate read-only reviewer graph review
 
 ## Local Development
 
-Follow [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for local startup, tunnel configuration, and per-worktree local state.
+Use mise (`mise run <task>`, see `mise.toml`) for local tooling; the Makefile remains only for compatibility. Follow [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for local startup, tunnel configuration, and per-worktree local state.
 
 ## Architecture
 
@@ -38,7 +38,7 @@ The main agent is assembled in `agent/server.py` from the middleware in `agent/m
 - Keep comments minimal and only explain non-obvious reasons.
 - For Slack interactions, prefer @mentions with plain-language requests and buttons for explicit actions. Keep typed commands, including slash commands, as optional shortcuts; never make them the only way to perform an action.
 - Make user-initiated UI mutations optimistic by default: update the visible state immediately, roll it back on failure, and show an error toast. Use a non-optimistic flow when an immediate update would be unsafe or misleading.
-- Create database migrations with `make migration m="Short description"`.
+- Create database migrations with `mise run migration "Short description"`.
 - Use structured logging with a static message and values in `extra`; never interpolate values into log messages. Avoid standard `LogRecord` field names in `extra`.
 - Prefer making API write operations exposed through UI controls available as appropriately authorized agent tools, but treat this as a guideline, not a requirement. Destructive or sensitive UI actions may remain human-only. Prefer reversible operations and existing sandbox CLIs, such as the authenticated `gh`, over adding tools.
 - A person's concierge DM thread must know everything that happens in their DM with the bot. Anything Open SWE posts into that DM outside the concierge thread's own run (approval cards, notifications, messages from other threads or schedules), and every button the person clicks there, must reach the concierge thread's context. Never add a DM post or DM button without that.

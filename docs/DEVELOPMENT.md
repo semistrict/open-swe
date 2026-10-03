@@ -10,11 +10,11 @@ mise run dev-init   # once per checkout or worktree
 mise run dev-ui     # every time: http://localhost:2024
 ```
 
-[mise](https://mise.jdx.dev/) installs the Node, pnpm, and uv versions [`mise.toml`](../mise.toml) pins (uv brings Python) and runs the matching Makefile targets with them, so `make dev-init` and `make dev-ui` do the same with tools you installed yourself. `dev-init` installs the Python and pnpm dependencies, writes `.env` (step 5), and starts the checkout's own Postgres container. It is safe to rerun, after pulling dependency changes for instance, because it only fills in what is missing. `dev-ui` then starts the backend and the hot-reloading dashboard without repeating any of that. This is enough for the dashboard: sign-in goes through the `gh` CLI, and with no model key the agent runs on your ChatGPT subscription. The steps below add a GitHub App, Slack, and the webhook tunnel.
+[mise](https://mise.jdx.dev/) installs the Node, pnpm, and uv versions [`mise.toml`](../mise.toml) pins (uv brings Python) and runs every task with them; `mise tasks` lists them all. The Makefile is still there for compatibility, since each task runs the `make` target of the same name, but it is not the recommended way in: `make` uses whatever tools happen to be installed. `dev-init` installs the Python and pnpm dependencies, writes `.env` (step 5), and starts the checkout's own Postgres container. It is safe to rerun, after pulling dependency changes for instance, because it only fills in what is missing. `dev-ui` then starts the backend and the hot-reloading dashboard without repeating any of that. This is enough for the dashboard: sign-in goes through the `gh` CLI, and with no model key the agent runs on your ChatGPT subscription. The steps below add a GitHub App, Slack, and the webhook tunnel.
 
 ## Prerequisites
 
-- [mise](https://mise.jdx.dev/) (`brew install mise`), which installs uv, Node, and pnpm; without it, **Python 3.14+** with [uv](https://docs.astral.sh/uv/), and Node 24 with [pnpm](https://pnpm.io/)
+- [mise](https://mise.jdx.dev/) (`brew install mise`), which installs uv, Node, and pnpm
 - [Docker](https://docs.docker.com/get-docker/) for the local Postgres
 - [LangGraph CLI](https://docs.langchain.com/langsmith/cli) (installed by `uv sync`)
 - A free [ngrok](https://ngrok.com/) account, so GitHub and Slack can reach your local backend (step 3)
@@ -49,10 +49,10 @@ For a first-time setup, the free ngrok plan gives you a static domain:
 4. Start the tunnel and leave it running while you develop:
 
    ```bash
-   make tunnel NGROK_DOMAIN=<name>.ngrok-free.dev   # or export NGROK_DOMAIN once in your shell
+   mise run tunnel <name>.ngrok-free.dev   # or export NGROK_DOMAIN once in your shell
    ```
 
-`make tunnel` runs `ngrok http 2024` on that domain with [`examples/ngrok/webhooks-only.yml`](../examples/ngrok/webhooks-only.yml) as its traffic policy, so only `/webhooks/*` is reachable from the internet. That restriction is not optional. Under `langgraph dev` the LangGraph API itself (`/threads`, `/runs`, `/assistants`, `/store`, …) has no authentication at all: the dashboard API checks its session cookie and the webhook endpoints check their signatures, but anyone who can reach port 2024 can read and create threads and runs. A tunnel that forwards the whole port publishes exactly that. Everything except the webhooks stays on `http://localhost:2024`, where you keep opening the dashboard. Check the policy once the backend is up (step 6): `curl https://<name>.ngrok-free.dev/webhooks/slack` answers `{"status":"ok", …}` from the backend, while `/ok` gets ngrok's own 404.
+`mise run tunnel` runs `ngrok http 2024` on that domain with [`examples/ngrok/webhooks-only.yml`](../examples/ngrok/webhooks-only.yml) as its traffic policy, so only `/webhooks/*` is reachable from the internet. That restriction is not optional. Under `langgraph dev` the LangGraph API itself (`/threads`, `/runs`, `/assistants`, `/store`, …) has no authentication at all: the dashboard API checks its session cookie and the webhook endpoints check their signatures, but anyone who can reach port 2024 can read and create threads and runs. A tunnel that forwards the whole port publishes exactly that. Everything except the webhooks stays on `http://localhost:2024`, where you keep opening the dashboard. Check the policy once the backend is up (step 6): `curl https://<name>.ngrok-free.dev/webhooks/slack` answers `{"status":"ok", …}` from the backend, while `/ok` gets ngrok's own 404.
 
 Preserve the existing webhook traffic policy. For local Slack OAuth, also preserve the callback relay: requests to `/dashboard/api/slack/callback` on the ngrok domain must redirect to `http://localhost:2024/dashboard/api/slack/callback` with the complete query string intact. The stock webhooks-only policy blocks this path, so reuse the local policy containing that redirect when Slack OAuth is configured. The callback is a redirect to localhost; dashboard pages and API routes must remain inaccessible through the tunnel.
 
@@ -60,11 +60,11 @@ Preserve the existing webhook traffic policy. For local Slack OAuth, also preser
 
 Slack delivers events to one URL per app, so a local backend needs its own Slack app rather than the one a shared deployment uses. Follow [Create the Slack app](INSTALLATION.md#5-create-the-slack-app) in the installation guide with your ngrok domain from step 3, `<name>.ngrok-free.dev`, as `<your-url>` (the manifest supplies the `https://`), and give it a name that says it is yours, for example `open-swe-<you>`; the bot's handle follows from it. Copy the four values it lists into `.env` in the next step.
 
-Slack checks the events Request URL against a running backend. If you create the app before `make dev` is up, open **Event Subscriptions** afterwards and press **Retry**. The same applies whenever you change `SLACK_SIGNING_SECRET`: restart the backend, then Retry.
+Slack checks the events Request URL against a running backend. If you create the app before the backend is up, open **Event Subscriptions** afterwards and press **Retry**. The same applies whenever you change `SLACK_SIGNING_SECRET`: restart the backend, then Retry.
 
 ## 5. Write `.env`
 
-`.env` in the repository root holds the local configuration; `langgraph dev` loads it. `make dev-init` creates it: in a worktree it copies the primary checkout's `.env`, keys and app credentials included, and otherwise it starts from [`.env.example`](../.env.example). It then fills in whichever of these are empty, and never overwrites a value:
+`.env` in the repository root holds the local configuration; `langgraph dev` loads it. `mise run dev-init` creates it: in a worktree it copies the primary checkout's `.env`, keys and app credentials included, and otherwise it starts from [`.env.example`](../.env.example). It then fills in whichever of these are empty, and never overwrites a value:
 
 - `TOKEN_ENCRYPTION_KEY` (a new Fernet key) and `DASHBOARD_JWT_SECRET`
 - `ALLOWED_GITHUB_USERS` and `CONFIGURED_ADMINS`, set to your `gh` login
@@ -72,36 +72,36 @@ Slack checks the events Request URL against a running backend. If you create the
 
 Add the GitHub App values from step 2 and the Slack values from step 4 to it. `GITHUB_APP_PRIVATE_KEY` is one double-quoted line with `\n` between the PEM lines, and `SLACK_PUBLIC_BASE_URL` is your domain from step 3.
 
-**Local sandboxes.** `.env.example` sets `SANDBOX_TYPE=local`: runs execute on your machine, unisolated, since `langsmith` sandboxes need `LANGSMITH_API_KEY` and a public dashboard URL. `make dev` gives each checkout its own `LOCAL_SANDBOX_ROOT_DIR`, `sandbox/` in the checkout's state directory below, so worktrees never share clones and no run works inside the checkout, which is the provider's default. Threads of one backend still share that root.
+**Local sandboxes.** `.env.example` sets `SANDBOX_TYPE=local`: runs execute on your machine, unisolated, since `langsmith` sandboxes need `LANGSMITH_API_KEY` and a public dashboard URL. `mise run dev` and `dev-ui` give each checkout its own `LOCAL_SANDBOX_ROOT_DIR`, `sandbox/` in the checkout's state directory below, so worktrees never share clones and no run works inside the checkout, which is the provider's default. Threads of one backend still share that root.
 
-**ChatGPT subscription instead of an API key.** With `OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE` set and no `OPENAI_API_KEY`, OpenAI models (the default without an Anthropic-only setup) run on your ChatGPT plan through the Codex backend. The file is a `langchain-openai` ChatGPT token store, and the backend refreshes it in place. `make dev-init` points it at the store Deep Agents Code signs in to (`~/.deepagents/.state/chatgpt-auth.json`) when that exists, and at `~/.langchain/chatgpt-auth.json` otherwise; `make chatgpt-login` signs in and writes it. Never point it at `~/.codex/auth.json`: rotating its refresh token signs the Codex CLI out.
+**ChatGPT subscription instead of an API key.** With `OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE` set and no `OPENAI_API_KEY`, OpenAI models (the default without an Anthropic-only setup) run on your ChatGPT plan through the Codex backend. The file is a `langchain-openai` ChatGPT token store, and the backend refreshes it in place. `mise run dev-init` points it at the store Deep Agents Code signs in to (`~/.deepagents/.state/chatgpt-auth.json`) when that exists, and at `~/.langchain/chatgpt-auth.json` otherwise; `mise run chatgpt-login` signs in and writes it. Never point it at `~/.codex/auth.json`: rotating its refresh token signs the Codex CLI out.
 
 `LANGGRAPH_URL` defaults to `http://localhost:2024`, and `DASHBOARD_BASE_URL` / `DASHBOARD_API_BASE_URL` default to it, so none of the three is needed locally. Keep them on localhost when setting `SLACK_PUBLIC_BASE_URL` to the tunnel. You only need one model credential: either a provider key or a gateway key if you route model calls through an LLM gateway, such as the [LangSmith Gateway](INSTALLATION.md#4-model-providers-and-api-keys). How the running model is chosen is covered in the same section. Linear, if you use it, comes from the [Linear](INSTALLATION.md#linear) section of the installation guide, with your ngrok domain as the URL.
 
-Open SWE needs a PostgreSQL database for its own tables, and `langgraph dev` does not provide one: it keeps LangGraph's threads and Store in memory, so the platform's Postgres is not there locally. Every checkout gets its own: `make dev-init` claims a loopback port from 54320 up that no other checkout uses, and `make dev` and `make dev-ui` start that checkout's `postgres:16` container and point `POSTGRES_URI` at it. Worktrees therefore never share users, settings, or migration history, so a branch that adds a migration cannot break another checkout's startup. Its state lives outside the checkout in `~/.open-swe/<checkout>-<hash>/`: `postgres-port`, the data directory `postgres/`, and the local sandbox root `sandbox/`. Removing the container keeps the data; deleting that directory, after removing a worktree for instance, discards it. `make postgres` starts the container on its own and `make postgres-down` stops it. Set `POSTGRES_URI` to skip the container and use any database you can create schemas in — see [Analytics storage](INSTALLATION.md#1-create-the-deployment) for what startup migrations create there, including the `repository`, `users`, and `workspace` tables.
+Open SWE needs a PostgreSQL database for its own tables, and `langgraph dev` does not provide one: it keeps LangGraph's threads and Store in memory, so the platform's Postgres is not there locally. Every checkout gets its own: `mise run dev-init` claims a loopback port from 54320 up that no other checkout uses, and `mise run dev` and `dev-ui` start that checkout's `postgres:16` container and point `POSTGRES_URI` at it. Worktrees therefore never share users, settings, or migration history, so a branch that adds a migration cannot break another checkout's startup. Its state lives outside the checkout in `~/.open-swe/<checkout>-<hash>/`: `postgres-port`, the data directory `postgres/`, and the local sandbox root `sandbox/`. Removing the container keeps the data; deleting that directory, after removing a worktree for instance, discards it. `mise run postgres` starts the container on its own and `mise run postgres-down` stops it. Set `POSTGRES_URI` to skip the container and use any database you can create schemas in — see [Analytics storage](INSTALLATION.md#1-create-the-deployment) for what startup migrations create there, including the `repository`, `users`, and `workspace` tables.
 
 With a database, every thread created from then on is also recorded into the append-only transcript event log and its LangGraph metadata is stamped `transcript: v2`. The dashboard reads recorded threads from this log by default for everyone. Threads with agent turns from before recording started are never recorded and always read LangGraph state.
 
-`TEST_ANALYTICS_POSTGRES_URI` is the same thing for the test suite, and only for it: the tests that exercise those tables migrate one template database per test process, clone a throwaway database from it for each test, and drop both afterwards. The role therefore needs `CREATEDB`; the `postgres` superuser of a throwaway container is simplest (`docker run -d -p 5439:5432 -e POSTGRES_PASSWORD=postgres postgres:16`, then `postgresql+asyncpg://postgres:postgres@localhost:5439/postgres`), or grant it with `ALTER ROLE <user> CREATEDB`. Use a separate server from the one `make dev` uses. Unset, every such test skips rather than fails, so a run without it proves less than it appears to; CI sets it, so a regression in that code is caught there either way.
+`TEST_ANALYTICS_POSTGRES_URI` is the same thing for the test suite, and only for it: the tests that exercise those tables migrate one template database per test process, clone a throwaway database from it for each test, and drop both afterwards. The role therefore needs `CREATEDB`; the `postgres` superuser of a throwaway container is simplest (`docker run -d -p 5439:5432 -e POSTGRES_PASSWORD=postgres postgres:16`, then `postgresql+asyncpg://postgres:postgres@localhost:5439/postgres`), or grant it with `ALTER ROLE <user> CREATEDB`. Use a separate server from the one `mise run dev` uses. Unset, every such test skips rather than fails, so a run without it proves less than it appears to; CI sets it, so a regression in that code is caught there either way.
 
 ## 6. Run
 
-`make dev` refuses to start while something else listens on port 2024, and names the process. When switching worktrees, stop the previous backend gracefully and wait for it to release port 2024 before starting the replacement. Each worktree has its own [local state](#local-state-across-worktrees).
+`mise run dev` and `dev-ui` refuse to start while something else listens on port 2024, and names the process. When switching worktrees, stop the previous backend gracefully and wait for it to release port 2024 before starting the replacement. Each worktree has its own [local state](#local-state-across-worktrees).
 
 ```bash
-make build-dashboard   # Vite build into ui/.output/public
-make dev               # langgraph dev on http://localhost:2024, serving the API and the dashboard (starts the Postgres container first)
+mise run build-dashboard   # Vite build into ui/.output/public
+mise run dev               # langgraph dev on http://localhost:2024, serving the API and the dashboard (starts the Postgres container first)
 ```
 
-`langgraph dev` serves the graphs, the FastAPI app, and the dashboard build together on port 2024. The bundled UI is a static build, so rebuild it when you pull UI changes, or skip `make build-dashboard` if you only need webhooks and the API. It reloads on code changes only: after editing `.env`, restart it.
+`langgraph dev` serves the graphs, the FastAPI app, and the dashboard build together on port 2024. The bundled UI is a static build, so rebuild it when you pull UI changes, or skip `build-dashboard` if you only need webhooks and the API. It reloads on code changes only: after editing `.env`, restart it.
 
 **Working on the UI?** Have the backend front the Vite dev server instead of serving a build:
 
 ```bash
-make dev-ui   # Vite on :3000 and the backend on :2024 forwarding UI requests to it, in one terminal
+mise run dev-ui   # Vite on :3000 and the backend on :2024 forwarding UI requests to it, in one terminal
 ```
 
-`make dev-ui` runs `make web` and `make dev` side by side, the backend with `DASHBOARD_DEV_SERVER_URL=http://localhost:3000`; Ctrl-C stops both. Open `http://localhost:2024` as usual: the page, its modules, and hot module replacement come from Vite, while `/dashboard/api/*` and the LangGraph routes stay with the backend. Nothing else changes, because the browser never leaves port 2024. The HMR WebSocket connects straight to Vite's port; the UI's Vite config points the client there.
+`dev-ui` runs `web` and `dev` side by side, the backend with `DASHBOARD_DEV_SERVER_URL=http://localhost:3000`; Ctrl-C stops both. Open `http://localhost:2024` as usual: the page, its modules, and hot module replacement come from Vite, while `/dashboard/api/*` and the LangGraph routes stay with the backend. Nothing else changes, because the browser never leaves port 2024. The HMR WebSocket connects straight to Vite's port; the UI's Vite config points the client there.
 
 | Endpoint | Purpose |
 |---|---|
@@ -114,11 +114,11 @@ make dev-ui   # Vite on :3000 and the backend on :2024 forwarding UI requests to
 | `/dashboard/api/*` | Dashboard API |
 | `GET /ok`, `GET /health` | Health checks |
 
-> `make run` serves the FastAPI app alone with uvicorn on port 8000, without the LangGraph runtime. Nothing that creates runs works there; use `make dev`.
+> `mise run fastapi` serves the FastAPI app alone with uvicorn on port 8000, without the LangGraph runtime. Nothing that creates runs works there; use `mise run dev`.
 
 ## 7. Verify it works
 
-Before reporting readiness, verify `/ok` on localhost, open the dashboard in a browser, and check tunnel forwarding and the OAuth callback redirect. A healthy `/ok` does not mean the UI is ready: `make dev` needs a dashboard build or a running Vite server to serve it.
+Before reporting readiness, verify `/ok` on localhost, open the dashboard in a browser, and check tunnel forwarding and the OAuth callback redirect. A healthy `/ok` does not mean the UI is ready: `mise run dev` needs a dashboard build or a running Vite server to serve it.
 
 **Dashboard.** Open `http://localhost:2024`, click **Sign in with GitHub**, and you should land logged in. With your login in `CONFIGURED_ADMINS`, the **Admin** pages appear. Set **Admin → Global defaults → Default Repository**, then start a task from the composer.
 
@@ -128,15 +128,15 @@ Before reporting readiness, verify `/ok` on localhost, open the dashboard in a b
 
 With only the seeded `default` workspace, Slack and GitHub runs land there by default. Create additional workspaces from the **Workspaces** page to exercise routing locally: the same order applies as in a deployment (thread, `workspace:<slug>` tag on the opening message — `env:<slug>` remains an alias, owning repository, bound Slack channel, user default, then `default`); see [How a run picks its workspace](INSTALLATION.md#7-verify-it-works) in the installation guide.
 
-**Incidents.** Follow [Incidents setup](INSTALLATION.md#incidents) to enroll Slack channels. Set `SLACK_APP_ID`; anyone in a channel can pause or complete its incident, and asking the agent requires a connected Open SWE account. Incident turns run on the main `agent` graph and are dispatched straight from the Slack webhook, so `make dev` or `make dev-ui` is all that is needed.
+**Incidents.** Follow [Incidents setup](INSTALLATION.md#incidents) to enroll Slack channels. Set `SLACK_APP_ID`; anyone in a channel can pause or complete its incident, and asking the agent requires a connected Open SWE account. Incident turns run on the main `agent` graph and are dispatched straight from the Slack webhook, so `mise run dev` or `dev-ui` is all that is needed.
 
 Record the worktree, process IDs, fixed tunnel domain, and state location in ignored `logs/local-dev/` notes in the primary checkout so the next session can reuse them.
 
 ## Backend API documentation
 
-[`swagger.json`](../swagger.json) is the generated OpenAPI 3.1 schema for the custom FastAPI backend (`agent.webapp:app`). Import it into an OpenAPI 3.1-compatible viewer. After local setup, `make run` serves interactive documentation at `http://localhost:8000/docs` and the live schema at `/openapi.json`; this server does not include the LangGraph runtime or support creating runs.
+[`swagger.json`](../swagger.json) is the generated OpenAPI 3.1 schema for the custom FastAPI backend (`agent.webapp:app`). Import it into an OpenAPI 3.1-compatible viewer. After local setup, `mise run fastapi` serves interactive documentation at `http://localhost:8000/docs` and the live schema at `/openapi.json`; this server does not include the LangGraph runtime or support creating runs.
 
-Regenerate the checked-in schema with `make swagger` after changing backend routes or models. The checked-in file can lag the running backend; use its live schema when inspecting deployed routes. Some request/response schemas and authentication requirements are not yet documented. LangGraph runtime endpoints such as `/runs`, `/threads`, and `/assistants` are not included.
+Regenerate the checked-in schema with `mise run swagger` after changing backend routes or models. The checked-in file can lag the running backend; use its live schema when inspecting deployed routes. Some request/response schemas and authentication requirements are not yet documented. LangGraph runtime endpoints such as `/runs`, `/threads`, and `/assistants` are not included.
 
 ## Local state across worktrees
 
@@ -145,7 +145,7 @@ Every checkout keeps its own local state, and a new worktree starts clean:
 - `.langgraph_api/` in the checkout, where `langgraph dev` persists threads, checkpoints, and the Store
 - `~/.open-swe/<checkout>-<hash>/`, with its Postgres container's port and data and the local sandbox root (see step 5)
 
-The two halves belong together: a thread's transcript is recorded in Postgres, so threads copied into another checkout without their database open with no history. [`.worktreeinclude`](../.worktreeinclude), which [Codex-managed worktrees](https://learn.chatgpt.com/docs/environments/git-worktrees#copy-ignored-local-files-into-managed-worktrees) read when they are created, therefore seeds only `.env`, and `make dev-init` copies `.env` from the primary checkout for worktrees made with `git worktree add`. Removing a worktree leaves its `~/.open-swe` directory and stopped container behind; `make postgres-down` in the worktree first, then delete the directory.
+The two halves belong together: a thread's transcript is recorded in Postgres, so threads copied into another checkout without their database open with no history. [`.worktreeinclude`](../.worktreeinclude), which [Codex-managed worktrees](https://learn.chatgpt.com/docs/environments/git-worktrees#copy-ignored-local-files-into-managed-worktrees) read when they are created, therefore seeds only `.env`, and `mise run dev-init` copies `.env` from the primary checkout for worktrees made with `git worktree add`. Removing a worktree leaves its `~/.open-swe` directory and stopped container behind; `mise run postgres-down` in the worktree first, then delete the directory.
 
 ## Sign in locally with the `gh` CLI
 
@@ -159,11 +159,10 @@ The `local-gh-dev` skill in `.claude/skills/` walks through the whole loop, incl
 
 ## Dashboard on the Vite dev server directly
 
-`make dev-ui` is the simple way to develop the UI. Opening Vite on `http://localhost:3000` directly also works:
+`mise run dev-ui` is the simple way to develop the UI. Opening Vite on `http://localhost:3000` directly also works:
 
 ```bash
-pnpm install      # from the repo root: ui/ and desktop/ are one pnpm workspace
-make web          # Vite on http://localhost:3000, proxying /dashboard/api/* to DASHBOARD_API_URL (default http://localhost:2024)
+mise run web      # Vite on http://localhost:3000, proxying /dashboard/api/* to DASHBOARD_API_URL (default http://localhost:2024)
 ```
 
 The browser now talks to `http://localhost:3000`, so the session cookie has to be set on that origin and the login callback has to return there:
@@ -212,9 +211,8 @@ To remove a PR, remove its label and trigger or await another run; the current d
 The Electron app in `desktop/` includes the compiled dashboard UI. Run it next to the backend:
 
 ```bash
-pnpm install                  # from the repo root
-make dev                      # terminal 1
-pnpm run dev:desktop          # terminal 2
+mise run dev                  # terminal 1
+mise run desktop              # terminal 2
 ```
 
 Development connects to `http://localhost:2024`. For a hosted backend run `pnpm --dir desktop run start -- --backend-url=https://your-backend.example.com` or set `OPEN_SWE_BACKEND_URL`. `pnpm --dir desktop run pack` creates an unpacked application and `pnpm --dir desktop run dist` an installer. Packaged builds ask for the organization's backend URL on first launch and never default to the maintainers' deployment. The GitHub App must allow `<backend-url>/dashboard/api/auth/callback` for desktop login.
@@ -238,30 +236,33 @@ For "how long until the agent answers", read `@context.step_generation_start_ms`
 
 **Desktop diagnostics.** Installed builds keep *View → Toggle Developer Tools* and add *Help → Save Diagnostics Report…*, which writes the renderer's recent console output, the main process's warnings, app and OS versions, and the exported perf spans to a text file, with session cookies, bearer tokens and provider keys redacted. Ask users to attach that file to a report.
 
-## Make targets
+## Tasks
 
-| Target | What it does |
+`mise tasks` lists every task with its description; these are the ones you will reach for. Each runs the `make` target of the same name, which still works for compatibility but uses whatever tools are installed rather than the pinned ones.
+
+| Task | What it does |
 |---|---|
-| `make dev-init` | One-time setup of a checkout or worktree: dependencies, `.env` with generated secrets, the Postgres container. Rerunnable |
-| `make postgres`, `make postgres-down` | Start or stop this checkout's Postgres container |
-| `make chatgpt-login` | Signs in with ChatGPT and writes the token store `OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE` names |
-| `make dev` | `langgraph dev` on port 2024: graphs, webhooks, dashboard API, and the bundled dashboard when a build exists |
-| `make dev-ui` | `make web` and `make dev` together, the backend fronting Vite so the UI hot-reloads on port 2024 |
-| `make web` | The Vite dev server alone on port 3000 |
-| `make build-dashboard` | Installs the dashboard's dependencies and builds it into `ui/.output/public` |
-| `make tunnel NGROK_DOMAIN=…` | `ngrok http 2024` on your static domain, exposing only `/webhooks/*` |
-| `make run` | The FastAPI app alone on port 8000, no LangGraph runtime |
-| `make desktop` | The Electron app in development, against a backend on port 2024 |
-| `make install` | `uv sync --extra dev` |
-| `make test [TEST_FILE=tests/…]` | `pytest -vvv` on `tests/` or the given path |
-| `make lint`, `make format`, `make format-check` | ruff check and format (`format` rewrites files) |
-| `make typecheck` | `ty check agent tests` |
+| `mise run dev-init` | One-time setup of a checkout or worktree: dependencies, `.env` with generated secrets, its Postgres container. Rerunnable |
+| `mise run dev-ui` | The backend on port 2024 fronting Vite, so the UI hot-reloads |
+| `mise run dev` | `langgraph dev` on port 2024: graphs, webhooks, dashboard API, and the bundled dashboard when a build exists |
+| `mise run web` | The Vite dev server alone on port 3000 |
+| `mise run build-dashboard` | Installs the dashboard's dependencies and builds it into `ui/.output/public` |
+| `mise run postgres`, `mise run postgres-down` | Start or stop this checkout's Postgres container |
+| `mise run chatgpt-login` | Signs in with ChatGPT and writes the token store `OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE` names |
+| `mise run tunnel <domain>` | `ngrok http 2024` on your static domain, exposing only `/webhooks/*` |
+| `mise run fastapi` | The FastAPI app alone on port 8000, no LangGraph runtime (`make run`) |
+| `mise run desktop` | The Electron app in development, against a backend on port 2024 |
+| `mise run migration "<description>"` | Creates the next database migration |
+| `mise run swagger` | Regenerates `swagger.json` from the backend routes |
+| `mise run test [path]` | `pytest -vvv` on `tests/` or the given path |
+| `mise run lint`, `mise run format`, `mise run format-check` | ruff check and format (`format` rewrites files) |
+| `mise run typecheck` | `ty check agent tests` |
 
 ## Troubleshooting
 
 ### Webhook not receiving events
 
-- The tunnel must be running (`make tunnel`) against port 2024, and the URL in GitHub or Slack must be your ngrok domain. Do not swap in a tunnel that forwards the whole port; see step 3. GitHub shows each delivery under the App's **Advanced** tab; ngrok's inspector at `http://localhost:4040` shows what arrived. With the webhooks-only policy, ngrok itself answers 404 for anything outside `/webhooks/*`, so test with `/webhooks/slack`, not `/ok`.
+- The tunnel must be running (`mise run tunnel`) against port 2024, and the URL in GitHub or Slack must be your ngrok domain. Do not swap in a tunnel that forwards the whole port; see step 3. GitHub shows each delivery under the App's **Advanced** tab; ngrok's inspector at `http://localhost:4040` shows what arrived. With the webhooks-only policy, ngrok itself answers 404 for anything outside `/webhooks/*`, so test with `/webhooks/slack`, not `/ok`.
 - Restart the backend after changing `.env`: `langgraph dev` reloads on code changes only, so a new `GITHUB_WEBHOOK_SECRET` or `SLACK_SIGNING_SECRET` is not picked up until then, and every delivery is rejected as `Invalid signature` in the meantime. Slack then needs **Retry** on its Request URL under **Event Subscriptions**.
 - Webhook secrets are required: without `GITHUB_WEBHOOK_SECRET`, `SLACK_SIGNING_SECRET`, or `LINEAR_WEBHOOK_SECRET`, every request to that endpoint is rejected with 401.
 
@@ -269,16 +270,16 @@ For "how long until the agent answers", read `@context.step_generation_start_ms`
 
 - `redirect_uri is not associated with this application`: the App must list `http://localhost:2024/dashboard/api/auth/callback` (or the `:3000` one when you open Vite directly). Add it in the App's settings.
 - Login redirects but the session does not stick: keep local URLs on `http://` so the cookie is `SameSite=Lax`.
-- `DASHBOARD_BASE_URL not configured` on Sign in with Slack or Notion: the backend has neither a dashboard build nor `DASHBOARD_DEV_SERVER_URL`, so it does not know where the dashboard is. Run `make build-dashboard` or use `make dev-ui`.
+- `DASHBOARD_BASE_URL not configured` on Sign in with Slack or Notion: the backend has neither a dashboard build nor `DASHBOARD_DEV_SERVER_URL`, so it does not know where the dashboard is. Run `mise run build-dashboard` or use `mise run dev-ui`.
 - Admin pages 403: add your GitHub login or email to `CONFIGURED_ADMINS`.
 
 ### Dashboard shows the LangGraph JSON instead of the UI, or 404s at `/`
 
-- There is no dashboard build: run `make build-dashboard`, or use `make dev-ui`.
-- With Vite on port 3000, `curl -i http://localhost:3000/dashboard/api/me` should return the backend's `401`, not HTML; otherwise export `DASHBOARD_API_URL` before `make web`.
+- There is no dashboard build: run `mise run build-dashboard`, or use `mise run dev-ui`.
+- With Vite on port 3000, `curl -i http://localhost:3000/dashboard/api/me` should return the backend's `401`, not HTML; otherwise export `DASHBOARD_API_URL` before `mise run web`.
 
 ### `Port 3000 is already in use`
 
-`make dev-ui` and `make web` refuse to start when another Vite is still running (Vite is configured with `strictPort`). Stop the old one or check `lsof -iTCP:3000 -sTCP:LISTEN`.
+`mise run dev-ui` and `mise run web` refuse to start when another Vite is still running (Vite is configured with `strictPort`). Stop the old one or check `lsof -iTCP:3000 -sTCP:LISTEN`.
 
 For sandbox, token-encryption, and "agent not responding" problems, see the installation guide's [Troubleshooting](INSTALLATION.md#troubleshooting).

@@ -1,5 +1,8 @@
 .PHONY: all format format-check lint typecheck test tests integration_tests help run dev-init chatgpt-login dev dev-ui postgres postgres-down migration tunnel web build-dashboard desktop install-desktop install-checkout swagger cli
 
+# Kept for compatibility: `mise run <task>` (mise.toml) is the recommended way in. Each mise
+# task runs the target of the same name here with the pinned Node, pnpm, and uv.
+
 # Default target executed when no arguments are given to make.
 all: help
 
@@ -39,14 +42,14 @@ endif
 dev: export POSTGRES_URI := $(or $(POSTGRES_URI),postgresql://postgres:postgres@127.0.0.1:$(LOCAL_POSTGRES_PORT)/postgres)
 dev: export LOCAL_SANDBOX_ROOT_DIR ?= $(DEV_STATE_DIR)/sandbox
 dev: $(if $(POSTGRES_URI),,postgres)
-	@test -e .env || { echo 'No .env: run make dev-init first.' >&2; exit 1; }
+	@test -e .env || { echo 'No .env: run mise run dev-init first.' >&2; exit 1; }
 	@if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:2024 -sTCP:LISTEN >/dev/null 2>&1; then \
 		echo 'Port 2024 is already in use (a stale container or another backend?):' >&2; \
 		lsof -nP -iTCP:2024 -sTCP:LISTEN >&2; exit 1; fi
 	uv run langgraph dev --no-browser --port 2024 --n-jobs-per-worker 10
 
 postgres:
-	@test -n "$(LOCAL_POSTGRES_PORT)" || { echo 'No Postgres port for this checkout: run make dev-init first.' >&2; exit 1; }
+	@test -n "$(LOCAL_POSTGRES_PORT)" || { echo 'No Postgres port for this checkout: run mise run dev-init first.' >&2; exit 1; }
 	$(COMPOSE) up -d --wait postgres
 
 postgres-down:
@@ -62,7 +65,7 @@ dev-ui:
 	$(MAKE) --no-print-directory -j2 web dev DASHBOARD_DEV_SERVER_URL=http://localhost:3000 TURBO_UI=stream
 
 web:
-	@test -d node_modules || { echo 'No node_modules: run make dev-init first.' >&2; exit 1; }
+	@test -d node_modules || { echo 'No node_modules: run mise run dev-init first.' >&2; exit 1; }
 	pnpm run dev
 
 # Public URL for GitHub and Slack webhooks while developing (docs/DEVELOPMENT.md, step 3).
@@ -75,7 +78,7 @@ tunnel:
 	$(eval DOMAIN := $(shell DOMAIN="$(NGROK_DOMAIN)"; DOMAIN="$${DOMAIN#https://}"; DOMAIN="$${DOMAIN#http://}"; echo "$${DOMAIN%/}"))
 	ngrok http 2024 --url https://$(DOMAIN) --traffic-policy-file examples/ngrok/webhooks-only.yml
 
-# Build the dashboard into ui/.output/public; `make dev` then serves it at /.
+# Build the dashboard into ui/.output/public; `mise run dev` then serves it at /.
 # With a LangGraph http.mount_prefix, pass DASHBOARD_BASE_PATH=<prefix>/ so the
 # build's asset URLs and router match where the server mounts it.
 build-dashboard:
@@ -163,6 +166,7 @@ typecheck:
 ######################
 
 help:
+	@echo 'Prefer `mise run <task>` (see `mise tasks`); these targets remain for compatibility.'
 	@echo '----'
 	@echo 'dev-init                     - one-time setup of this checkout: dependencies, .env, its PostgreSQL container'
 	@echo 'chatgpt-login                - sign in with ChatGPT for OpenAI models without an API key'

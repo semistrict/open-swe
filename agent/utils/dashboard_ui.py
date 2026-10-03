@@ -63,7 +63,7 @@ def dashboard_static_dir() -> Path | None:
 
     ``DASHBOARD_STATIC_DIR`` names it explicitly, and a named directory without a
     build means no UI (so images and tests behave the same everywhere); otherwise
-    the in-repo build from ``make build-dashboard`` is served when present.
+    the in-repo build from ``mise run build-dashboard`` is served when present.
     """
     configured = ENV.DASHBOARD_STATIC_DIR.optional()
     candidate = Path(configured) if configured else _REPO_BUILD_DIR
@@ -220,7 +220,7 @@ class DashboardDevProxyRoute(DashboardCatchAll):
         except httpx2.HTTPError as exc:
             return PlainTextResponse(
                 f"The dashboard dev server at {self.upstream} did not answer ({exc}). "
-                "Start it with `make web`, or unset DASHBOARD_DEV_SERVER_URL to serve a build.",
+                "Start it with `mise run web`, or unset DASHBOARD_DEV_SERVER_URL to serve a build.",
                 status_code=502,
             )
         response = StreamingResponse(
