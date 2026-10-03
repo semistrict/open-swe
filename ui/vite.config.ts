@@ -317,6 +317,9 @@ const config = defineConfig({
     __OPEN_SWE_BUNDLE_BUILT_AT__: JSON.stringify(BUNDLE_BUILD_AT),
   },
   server: { port: DEV_PORT, strictPort: true, hmr: { clientPort: DEV_PORT } },
+  // The build's prerender starts a preview server, which would inherit the dev
+  // server's strict port and fail while `dev-ui` holds it.
+  preview: { strictPort: false },
   resolve: { tsconfigPaths: true },
   optimizeDeps: {
     include: [
