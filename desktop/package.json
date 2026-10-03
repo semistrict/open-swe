@@ -90,6 +90,7 @@
       "entitlements": "entitlements.mac.plist",
       "extendInfo": { "NSUserActivityTypes": ["NSUserActivityTypeBrowsingWeb"] },
       "entitlementsInherit": "entitlements.mac.inherit.plist",
+      "signIgnore": "/local-backend/(?!runtime/bin/)(?!.*\\.(?:so|dylib)$)",
       "target": [
         "dmg",
         "zip"
