@@ -22,6 +22,8 @@
 /dist
 **/dist
 .turbo/
+# bun build --compile leaves these behind when interrupted
+*.bun-build
 
 # misc
 .DS_Store
