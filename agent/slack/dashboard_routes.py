@@ -2,7 +2,8 @@
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Path
+from fastapi import APIRouter, HTTPException, Path
+from pydantic import BaseModel
 
 from agent.dashboard.deps import ADMIN_DEP, SESSION_DEP, session_is_admin
 from agent.slack.allowed_bots import (
@@ -16,11 +17,14 @@ from agent.slack.allowed_bots import (
 from agent.slack.channel_options import SlackChannelDirectory, list_slack_channels
 from agent.slack.client import get_slack_user_names, lookup_slack_thread_id
 from agent.slack.connect import router as connect_router
-from agent.slack.dm import CONCIERGE_TS, open_dm
+from agent.slack.dm import CONCIERGE_TITLE, CONCIERGE_TS, bind_concierge_dm, concierge_dm_channel
+from agent.thread_ids import concierge_thread_id
+from agent.threads.runs import create_dashboard_thread_record
 from agent.threads.summary import assert_thread_readable
 from agent.users import User
 from agent.utils.json_types import thread_metadata
 from agent.utils.thread_ops import langgraph_client
+from agent.webhooks.common import thread_exists
 
 router = APIRouter(tags=["slack"])
 router.include_router(connect_router)
@@ -35,23 +39,77 @@ async def api_slack_user_name(
     return {"name": names.get(user_id, user_id)}
 
 
-@router.get("/slack/concierge")
-async def api_concierge(
-    session: dict[str, str] = SESSION_DEP,
-) -> dict[str, str | None]:
+class ConciergeThread(BaseModel):
+    """The signed-in person's concierge conversation, or ``None`` before it exists."""
+
+    thread_id: str | None
+
+
+async def _concierge_user(session: dict[str, str]) -> User | None:
     user = await User.for_login("github", session["sub"])
-    if user is None or not user.typed_preferences.concierge_mode or not user.slack_user_id:
-        return {"thread_id": None, "channel_id": None}
-    channel_id = await open_dm(user.slack_user_id)
+    return user if user is not None and user.typed_preferences.concierge_mode else None
+
+
+async def _assert_concierge_readable(thread_id: str, session: dict[str, str]) -> None:
+    thread = await langgraph_client().threads.get(thread_id)
+    assert_thread_readable(thread_metadata(thread), session["sub"], session.get("email"))
+
+
+@router.get("/slack/concierge")
+async def api_concierge(session: dict[str, str] = SESSION_DEP) -> ConciergeThread:
+    user = await _concierge_user(session)
+    if user is None:
+        return ConciergeThread(thread_id=None)
+    channel_id = await concierge_dm_channel(user)
     thread_id = (
         await lookup_slack_thread_id(langgraph_client(), channel_id, CONCIERGE_TS)
         if channel_id
         else None
     )
+    if thread_id is None:
+        own = concierge_thread_id(str(user.id))
+        thread_id = own if await thread_exists(own) else None
     if thread_id:
-        thread = await langgraph_client().threads.get(thread_id)
-        assert_thread_readable(thread_metadata(thread), session["sub"], session.get("email"))
-    return {"thread_id": thread_id, "channel_id": channel_id}
+        await _assert_concierge_readable(thread_id, session)
+    return ConciergeThread(thread_id=thread_id)
+
+
+@router.post("/slack/concierge")
+async def api_open_concierge(session: dict[str, str] = SESSION_DEP) -> ConciergeThread:
+    """Open the person's concierge conversation, creating it on first use.
+
+    It works without Slack; once Slack can reach the person, their DM continues
+    this same thread.
+    """
+    user = await _concierge_user(session)
+    if user is None:
+        raise HTTPException(409, "Turn on concierge mode first")
+    channel_id = await concierge_dm_channel(user)
+    thread_id = (
+        await bind_concierge_dm(user, channel_id)
+        if channel_id
+        else concierge_thread_id(str(user.id))
+    )
+    if await thread_exists(thread_id):
+        await _assert_concierge_readable(thread_id, session)
+        return ConciergeThread(thread_id=thread_id)
+    try:
+        await create_dashboard_thread_record(
+            thread_id,
+            login=session["sub"],
+            email=session.get("email"),
+            repo_config={},
+            repo_explicitly_none=True,
+            prompt=None,
+            title=CONCIERGE_TITLE,
+            visibility="private",
+        )
+    except Exception as exc:
+        # A concurrent open created it first; that thread is the one to open.
+        if getattr(exc, "status_code", None) != 409:
+            raise
+        await _assert_concierge_readable(thread_id, session)
+    return ConciergeThread(thread_id=thread_id)
 
 
 @router.get("/slack/bots")

@@ -24,7 +24,7 @@ from agent.slack.ask import (
     process_slack_ask,
 )
 from agent.slack.breakout import BreakoutCommand, process_slack_breakout
-from agent.slack.dm import CONCIERGE_TS, is_dm_channel
+from agent.slack.dm import CONCIERGE_TS, bind_concierge_dm_for_slack, is_dm_channel
 from agent.slack.failures import (
     SlackRequestError,
     SlackRequestTarget,
@@ -482,6 +482,7 @@ async def slack_webhook(
     in_concierge_mode = in_dm_channel and await User.concierge_mode_for_slack(user_id)
     if in_concierge_mode:
         thread_ts = CONCIERGE_TS
+        await bind_concierge_dm_for_slack(user_id, channel_id)
 
     if {event.subtype, updated_message.subtype} & _MEMBERSHIP_SUBTYPES:
         if in_code_channel and await common.claim_slack_event(event_id, channel_id, event_ts):

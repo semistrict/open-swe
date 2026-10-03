@@ -12,6 +12,7 @@ import uuid
 
 __all__ = [
     "baby_sit_lock_thread_id",
+    "concierge_thread_id",
     "github_issue_thread_id",
     "linear_issue_thread_id",
     "pr_comment_thread_id",
@@ -61,6 +62,11 @@ def review_style_thread_id(owner: str, repo: str) -> str:
 
 def slack_thread_id(channel: str, timestamp: str, nonce: str | None = None) -> str:
     return _url_uuid(f"slack:{channel}:{timestamp}:{nonce or ''}")
+
+
+def concierge_thread_id(user_id: str) -> str:
+    """A person's one concierge conversation, opened from the dashboard or their Slack DM."""
+    return _url_uuid(f"open-swe:concierge:{user_id}")
 
 
 def baby_sit_lock_thread_id(key: str) -> str:

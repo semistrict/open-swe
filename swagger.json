@@ -1090,6 +1090,27 @@
         "title": "CommentBody",
         "type": "object"
       },
+      "ConciergeThread": {
+        "description": "The signed-in person's concierge conversation, or ``None`` before it exists.",
+        "properties": {
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          }
+        },
+        "required": [
+          "thread_id"
+        ],
+        "title": "ConciergeThread",
+        "type": "object"
+      },
       "Conversation": {
         "properties": {
           "items": {
@@ -15726,18 +15747,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "title": "Response Api Concierge Dashboard Api Slack Concierge Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ConciergeThread"
                 }
               }
             },
@@ -15750,6 +15760,32 @@
           }
         ],
         "summary": "Api Concierge",
+        "tags": [
+          "dashboard",
+          "slack"
+        ]
+      },
+      "post": {
+        "description": "Open the person's concierge conversation, creating it on first use.\n\nIt works without Slack; once Slack can reach the person, their DM continues\nthis same thread.",
+        "operationId": "api_open_concierge_dashboard_api_slack_concierge_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConciergeThread"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "DashboardSession": []
+          }
+        ],
+        "summary": "Api Open Concierge",
         "tags": [
           "dashboard",
           "slack"

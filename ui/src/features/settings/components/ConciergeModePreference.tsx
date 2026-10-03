@@ -14,7 +14,7 @@ export function ConciergeModePreference() {
       <SettingsRow
         label="Concierge mode"
         htmlFor="concierge-mode"
-        description="Your whole Slack DM with Open SWE becomes one private thread it always answers in, instead of a new thread for every message."
+        description="One private conversation with Open SWE, opened from Concierge in the sidebar. Your Slack DM with Open SWE continues it instead of starting a new thread for every message."
         control={
           <Switch
             id="concierge-mode"

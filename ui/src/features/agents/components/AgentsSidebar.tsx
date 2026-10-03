@@ -19,7 +19,7 @@ import {
   StackIcon,
 } from "@phosphor-icons/react"
 import { Radar } from "lucide-react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 
 import type { DesktopUpdateState } from "@/desktop"
@@ -206,19 +206,33 @@ export function AgentsSidebar({
   const navigate = useNavigate()
   const chat = useChatRoutes()
   const profile = useProfile()
+  const queryClient = useQueryClient()
+  const conciergeKey = ["concierge", user?.login]
   const concierge = useQuery({
-    queryKey: ["concierge", user?.login],
+    queryKey: conciergeKey,
     queryFn: api.concierge,
     enabled: !localOnly && !!user && !!profile.data?.concierge_mode,
     refetchInterval: 30_000,
   })
+  const conciergeThreadId = concierge.data?.thread_id ?? null
+  // The first open creates the conversation, so it works before any Slack DM.
+  const openConcierge = useMutation({
+    mutationFn: api.openConcierge,
+    onSuccess: (opened) => {
+      queryClient.setQueryData(conciergeKey, opened)
+      if (opened.thread_id)
+        void navigate({
+          to: chat.thread,
+          params: { threadId: opened.thread_id },
+        })
+    },
+  }).mutate
   const {
     viewport: scrollViewport,
     edges: scrollEdges,
     measure: measureScrollEdges,
   } = useScrollEdges()
   const { openPalette } = useAppCommandControls()
-  const queryClient = useQueryClient()
   const openThread = useCallback(
     (threadId: string) => {
       const review = queryClient.getQueryData<AgentThread>(
@@ -754,31 +768,30 @@ export function AgentsSidebar({
           New Thread
         </Link>
         {!localOnly && profile.data?.concierge_mode && (
-          <a
-            href={
-              concierge.data?.thread_id
-                ? `${chat.home}/${concierge.data.thread_id}`
-                : concierge.data?.channel_id
-                  ? `slack://channel?id=${concierge.data.channel_id}`
-                  : undefined
-            }
-            onClick={layout.closeOnMobile}
+          <Link
+            to={conciergeThreadId ? chat.thread : chat.home}
+            params={{ threadId: conciergeThreadId ?? "" }}
+            onClick={(event) => {
+              layout.closeOnMobile()
+              if (conciergeThreadId) return
+              event.preventDefault()
+              openConcierge()
+            }}
             aria-current={
-              !!concierge.data?.thread_id &&
-              activeThreadId === concierge.data.thread_id
+              conciergeThreadId && activeThreadId === conciergeThreadId
                 ? "page"
                 : undefined
             }
             className={cn(
               "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-sidebar-row-hover",
-              !!concierge.data?.thread_id &&
-                activeThreadId === concierge.data.thread_id &&
+              conciergeThreadId &&
+                activeThreadId === conciergeThreadId &&
                 "bg-sidebar-row-active"
             )}
           >
             <ChatCircleIcon className="size-4" />
             Concierge
-          </a>
+          </Link>
         )}
       </div>
 
