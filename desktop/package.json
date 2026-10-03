@@ -14,6 +14,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check": "pnpm run typecheck && pnpm run test && pnpm run build:ui",
     "pack": "pnpm run build:ui && pnpm run build && pnpm run build:local-backend && pnpm run build:cli && electron-builder --dir",
+    "pack:development": "pnpm run build:ui && pnpm run build && pnpm run build:local-backend && pnpm run build:cli && electron-builder --dir -c.appId=com.langchain.openswe.dev -c.productName=\"Open SWE Development\" -c.extraMetadata.openSweBuildProfile=development -c.mac.entitlements=entitlements.mac.inherit.plist",
     "dist": "pnpm run build:ui && pnpm run build && pnpm run build:local-backend && pnpm run build:cli && electron-builder",
     "build:local-backend": "node scripts/build-local-backend.cjs",
     "build:cli": "pnpm --filter open-swe-cli run build"

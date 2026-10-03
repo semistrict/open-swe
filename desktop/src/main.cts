@@ -103,6 +103,7 @@ const appRuntime = resolveAppRuntime({
   argv: process.argv,
   isPackaged: app.isPackaged,
   appDataPath: app.getPath("appData"),
+  buildProfile: require("../package.json").openSweBuildProfile,
 });
 const isDevelopment = appRuntime.isDevelopment;
 if (appRuntime.userDataPath) {
@@ -202,7 +203,7 @@ function failDesktopUpdate(error: unknown) {
 }
 
 function configureAutoUpdater() {
-  if (!app.isPackaged) return;
+  if (!appRuntime.receivesUpdates) return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
@@ -1182,7 +1183,7 @@ function createMenu() {
   };
   const checkForUpdatesItem = {
     label: "Check for Updates…",
-    enabled: app.isPackaged,
+    enabled: appRuntime.receivesUpdates,
     click: () => void checkForDesktopUpdates(),
   };
   const template = [
@@ -1814,7 +1815,7 @@ if (!hasSingleInstanceLock) {
       backendUrl = resolveBackendUrl({
         argv: process.argv.slice(1),
         env: process.env,
-        isPackaged: app.isPackaged,
+        isDevelopment,
         storedUrl: readStoredBackendUrl(),
       });
     } catch (error) {

@@ -106,6 +106,12 @@ pnpm --dir desktop run dist # installer for the current platform
 Both commands build `ui/` and package its static output with Electron. Build outputs are written
 to `desktop/dist/`.
 
+`pack:development` packages "Open SWE Development" (`com.langchain.openswe.dev`): the development
+profile in a real app bundle, signed with whichever Developer ID identity is in your keychain.
+Unlike `electron . --dev`, macOS gives it its own entry under Notifications, so run notifications
+can be tried locally. It shares the development profile's backend and session, takes no updates,
+and leaves out Universal Links, which need LangChain's provisioning profile.
+
 ## macOS releases
 
 `desktop/package.json` is the latest stable version. Every **Promote main to prod** run publishes a
