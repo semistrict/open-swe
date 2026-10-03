@@ -40,6 +40,7 @@ from agent.transcript.snapshot import (
     load_turn_page,
     measure_gap,
 )
+from agent.utils.shutdown import until_stopping
 from agent.utils.timing import phase, server_timing_header
 
 logger = logging.getLogger(__name__)
@@ -153,7 +154,7 @@ async def api_stream_thread_transcript(
     # thread at all gets an HTTP error rather than a stream that ends at once.
     await _readable_transcript(thread_id, session)
     return StreamingResponse(
-        _stream(thread_id, after, session),
+        until_stopping(_stream(thread_id, after, session)),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )

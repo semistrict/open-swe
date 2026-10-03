@@ -30,6 +30,7 @@ from starlette.routing import Match, Route, get_route_path
 from starlette.types import Scope
 
 from agent.config import ENV
+from agent.utils.shutdown import until_stopping
 
 logger = logging.getLogger(__name__)
 
@@ -181,6 +182,7 @@ _HOP_BY_HOP_HEADERS = frozenset(
 # Uvicorn adds its own; forwarding Vite's would duplicate them.
 _SERVER_HEADERS = frozenset({"date", "server"})
 _PROXIED_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+_EVENT_STREAM_TIMEOUT = httpx2.Timeout(None, connect=5.0)
 
 
 class DashboardDevProxyRoute(DashboardCatchAll):
@@ -212,9 +214,16 @@ class DashboardDevProxyRoute(DashboardCatchAll):
             if key.lower() not in _HOP_BY_HOP_HEADERS and key.lower() != "host"
         ]
         body = None if request.method in ("GET", "HEAD", "OPTIONS") else request.stream()
+        # An event stream is quiet for as long as it has nothing to say; a read
+        # timeout would only turn that silence into a failed response.
+        streaming = "text/event-stream" in request.headers.get("accept", "")
         try:
             upstream_request = self.client.build_request(
-                request.method, target, headers=headers, content=body
+                request.method,
+                target,
+                headers=headers,
+                content=body,
+                timeout=_EVENT_STREAM_TIMEOUT if streaming else httpx2.USE_CLIENT_DEFAULT,
             )
             upstream = await self.client.send(upstream_request, stream=True)
         except httpx2.HTTPError as exc:
@@ -224,7 +233,7 @@ class DashboardDevProxyRoute(DashboardCatchAll):
                 status_code=502,
             )
         response = StreamingResponse(
-            upstream.aiter_raw(),
+            until_stopping(upstream.aiter_raw()),
             status_code=upstream.status_code,
             background=BackgroundTask(upstream.aclose),
         )
