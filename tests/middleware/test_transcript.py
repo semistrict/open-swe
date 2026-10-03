@@ -63,6 +63,11 @@ def _install(
         return transcribed
 
     monkeypatch.setattr(mw, "_has_transcript", _has_transcript)
+
+    async def message_recorded(thread_id: str, message_id: str) -> bool:
+        return False
+
+    monkeypatch.setattr(mw, "message_recorded", message_recorded)
     configurable: dict[str, Any] = {"thread_id": THREAD_ID, "run_id": RUN_ID}
     if turn_id is not None:
         configurable["transcript_turn_id"] = str(turn_id)
@@ -146,6 +151,37 @@ async def test_hook_sequence_for_a_transcribed_turn(monkeypatch: pytest.MonkeyPa
     assert completed.event.has_output is True
     assert completed.event.output_truncated is False
     assert completed.tool_output == "file body"
+
+
+@pytest.mark.parametrize(
+    ("recorded", "expected"),
+    [
+        (True, ["turn.started", "turn.completed"]),
+        (False, ["turn.requested", "turn.started", "turn.completed"]),
+    ],
+)
+async def test_a_run_without_a_turn_requests_one_only_for_a_new_message(
+    monkeypatch: pytest.MonkeyPatch, recorded: bool, expected: list[str]
+) -> None:
+    """A follow-up drained from the queue starts on history; a run started elsewhere brings its ask."""
+    engine = _install(monkeypatch, transcribed=True)
+
+    async def message_recorded(thread_id: str, message_id: str) -> bool:
+        assert (thread_id, message_id) == (THREAD_ID, "human-2")
+        return recorded
+
+    monkeypatch.setattr(mw, "message_recorded", message_recorded)
+    history = [
+        HumanMessage(content="first ask", id="human-1"),
+        AIMessage(content="done", id="ai-1"),
+        HumanMessage(content="second ask", id="human-2"),
+    ]
+
+    middleware = mw.TranscriptMiddleware()
+    await middleware.abefore_agent({"messages": history}, None)
+    await middleware.aafter_agent({"messages": history}, None)
+
+    assert engine.types == expected
 
 
 async def test_only_mid_run_human_messages_are_recorded_once(

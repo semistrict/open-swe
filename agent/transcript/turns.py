@@ -102,6 +102,24 @@ async def recorded_turn_id(thread_id: str, command_id: str) -> UUID | None:
         return result.scalar_one_or_none()
 
 
+async def message_recorded(thread_id: str, message_id: str) -> bool:
+    """Whether the transcript already holds ``message_id``, in whichever turn."""
+    if not postgres.configured():
+        return False
+    async with postgres.read_only_transaction() as conn:
+        result = await conn.execute(
+            text(
+                """
+                SELECT 1 FROM thread_message
+                WHERE thread_id = :thread_id AND message_id = :message_id
+                LIMIT 1
+                """
+            ),
+            {"thread_id": thread_id, "message_id": message_id},
+        )
+        return result.scalar_one_or_none() is not None
+
+
 async def _open_turn(thread_id: str, run_id: str | None) -> UUID | None:
     """The turn this run is still executing.
 

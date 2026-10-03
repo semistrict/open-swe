@@ -27,6 +27,7 @@ from agent.threads.runs import (
     _notify_slack_web_handoff,
     offload_requested,
     queue_follow_up_run,
+    run_is_live,
     steer_running_thread,
 )
 from agent.threads.summary import (
@@ -203,8 +204,18 @@ async def proxy_dashboard_thread_commands(
             principal.assert_can_read(metadata)
         if method != "run.start" and not (post_command and metadata.get("admin_thread") is True):
             principal.assert_can_read(metadata)
-        metadata_run_status = metadata.get("latest_run_status")
-        thread_busy = _thread_is_busy(thread) or metadata_run_status in {"pending", "running"}
+        # The metadata status is a cache refreshed only when a summary is read,
+        # so it can still say "running" long after the run ended. It flags a
+        # run LangGraph may not report busy yet; the run itself says whether it is.
+        latest_run_id = metadata.get("latest_run_id")
+        thread_busy = _thread_is_busy(thread) or (
+            metadata.get("latest_run_status") in {"pending", "running"}
+            and await run_is_live(
+                langgraph_client(),
+                thread_id,
+                latest_run_id if isinstance(latest_run_id, str) and latest_run_id else None,
+            )
+        )
 
     start_params = parsed.get("params") if isinstance(parsed.get("params"), dict) else {}
     # The client's queue-or-steer choice rides the run's multitask strategy.

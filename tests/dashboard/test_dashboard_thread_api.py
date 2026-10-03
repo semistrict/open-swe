@@ -623,6 +623,59 @@ async def test_proxy_commands_preserves_admin_writes_and_owner_reads(monkeypatch
     ]
 
 
+@pytest.mark.parametrize(
+    ("run_status", "expected"), [("success", "started"), ("running", "steered")]
+)
+async def test_proxy_steers_only_into_a_run_that_is_still_live(
+    monkeypatch, run_status: str, expected: str
+) -> None:
+    # The cached metadata status outlives the run until a summary refreshes it.
+    class FakeThreads:
+        async def get(self, thread_id: str) -> dict[str, object]:
+            return {
+                "thread_id": thread_id,
+                "status": "idle",
+                "metadata": {
+                    "source": "dashboard",
+                    "owner_login": "owner",
+                    "visibility": "public",
+                    "latest_run_status": "running",
+                    "latest_run_id": "last-run",
+                },
+            }
+
+    class FakeRuns:
+        async def get(self, thread_id: str, run_id: str) -> dict[str, object]:
+            return {"run_id": run_id, "status": run_status}
+
+    class FakeClient:
+        threads = FakeThreads()
+        runs = FakeRuns()
+
+    class Started(Exception):
+        pass
+
+    async def fake_enrich(*args: object, **kwargs: object) -> dict[str, object]:
+        raise Started
+
+    async def fake_steer(*args: object, **kwargs: object) -> dict[str, object]:
+        return {"steered": True}
+
+    patch_thread_module(monkeypatch, "langgraph_client", lambda: FakeClient())
+    patch_thread_module(monkeypatch, "_enrich_run_start_command", fake_enrich)
+    patch_thread_module(monkeypatch, "steer_running_thread", fake_steer)
+
+    try:
+        await thread_proxy.proxy_dashboard_thread_commands(
+            "tid", "owner", b'{"method": "run.start", "params": {}}'
+        )
+        outcome = "steered"
+    except Started:
+        outcome = "started"
+
+    assert outcome == expected
+
+
 async def test_run_cancel_lets_only_the_sender_withdraw_a_queued_follow_up(monkeypatch) -> None:
     class FakeThreads:
         async def get(self, thread_id: str) -> dict[str, object]:

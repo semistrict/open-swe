@@ -66,6 +66,7 @@ from agent.transcript.events import (
     TurnRequested,
     TurnStarted,
 )
+from agent.transcript.turns import message_recorded
 
 logger = logging.getLogger(__name__)
 
@@ -702,7 +703,19 @@ class TranscriptMiddleware(OpenSWEMiddleware):
         _runs[key] = run_state
 
         commands: list[Command] = []
-        if (not transcribed or ids.turn_id is None) and human is not None:
+        # A run that brings no turn of its own requests one for its message. A
+        # follow-up drained from the queue brings none either, but its message is
+        # injected later: the newest human in state then already belongs to an
+        # earlier turn, and requesting it again would show it twice.
+        if (
+            human is not None
+            and (not transcribed or ids.turn_id is None)
+            and not (
+                transcribed
+                and isinstance(human.id, str)
+                and await message_recorded(ids.thread_id, human.id)
+            )
+        ):
             commands.append(_turn_requested(run_state, human, ids, metadata))
         commands.append(
             Command(

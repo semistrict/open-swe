@@ -37,3 +37,9 @@ Every click and keystroke changes something visible within 100 ms: the pressed s
 ## Focus, selection, and scroll survive updates
 
 A refetch, a streamed message, or a re-render keeps the person's focus, text selection, and scroll position. Scroll follows new content only while the person is already at the bottom.
+
+## Everything appears once
+
+Each message, row, and item is on screen once, however many paths deliver it: the optimistic copy, the server's echo, a stream, and a refetch all land on the same row.
+
+- **2026-10-03, fixed.** The user's earlier message ("now?") showed twice after they sent "telephone" six seconds after a reply (flinch `2026-10-03T06-14-10-478Z`, React's duplicate-key warning from −10.6 s). The commands proxy decided the thread was busy from a cached `latest_run_status` that only summary reads refresh, and the open thread had stopped polling once the transcript said the turn ended. So the send was steered into a run that had already finished. The follow-up run it dispatched opened its own turn for the newest human message in state, which was the previous message. The proxy now asks the run itself before trusting the cache, and the middleware requests a turn only for a message the transcript does not already hold.

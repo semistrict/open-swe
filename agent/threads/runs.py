@@ -1164,7 +1164,7 @@ async def steer_running_thread(
     # The run may have ended between the busy check and the store write, past
     # the completion hook's own look at the store. ``reject`` keeps the two
     # from racing each other into a second run.
-    if not await _run_is_live(client, thread_id, live_run_id):
+    if not await run_is_live(client, thread_id, live_run_id):
         try:
             dispatched = await dispatch_pending_follow_ups(
                 thread_id, login, metadata, client=client, multitask_strategy="reject"
@@ -1204,7 +1204,8 @@ async def steer_running_thread(
     }
 
 
-async def _run_is_live(client: Any, thread_id: str, run_id: str | None) -> bool:
+async def run_is_live(client: Any, thread_id: str, run_id: str | None) -> bool:
+    """Whether ``run_id`` is still pending or running, read from the run itself."""
     if run_id is None:
         return False
     try:

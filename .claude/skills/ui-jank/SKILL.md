@@ -69,5 +69,6 @@ The causes so far were not in the component that looked wrong, but in two source
 - A poll fired at the moment of an optimistic change, racing the request that makes it true.
 - An optimistic row shaped differently from the server's echo, or an indicator inserted above content and removed later.
 - Work scheduled with `requestAnimationFrame` from a `ResizeObserver` callback, which lands a frame late.
+- A cached status trusted for a decision after it went stale, such as steering a send into a run that had already ended.
 
 [TASTE.md](TASTE.md) has each instance with its fix.
