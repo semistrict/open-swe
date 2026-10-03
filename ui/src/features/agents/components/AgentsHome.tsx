@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useRouterState } from "@tanstack/react-router"
+import { toast } from "sonner"
 
 import type {
   DesktopLocalThreadSummary,
@@ -16,6 +17,10 @@ import {
 import type { ModelSelection } from "@/features/agents/lib/provider/useModelOptions"
 import type { RunTarget } from "@/features/agents/components/composer/RunTargetSelector"
 import { AgentPromptBar } from "@/features/agents/components/AgentPromptBar"
+import type {
+  RestoredDraft,
+  SubmitOptions,
+} from "@/features/agents/components/composer/ChatComposer"
 import { AgentThreadHeader } from "@/features/agents/components/AgentThreadHeader"
 import { OnboardingDialog } from "@/features/agents/components/OnboardingDialog"
 import { Messages } from "@/features/agents/components/messages"
@@ -49,6 +54,7 @@ import {
 } from "@/features/agents/lib/gitPanelPreferences"
 import { useTerminalGroups } from "@/features/agents/lib/terminalGroups"
 import { api } from "@/lib/api"
+import { reportError } from "@/lib/errorReporting"
 import { useProfile, useRepos } from "@/lib/profile"
 import { useSession } from "@/lib/session"
 import {
@@ -120,6 +126,7 @@ export function AgentsHome({
   const defaultWorkspaceSlug = workspaceOptionsQuery.data?.default_slug ?? null
   const [submittedDraft, setSubmittedDraft] =
     useState<CreateAgentThreadVariables | null>(null)
+  const [restoreDraft, setRestoreDraft] = useState<RestoredDraft | null>(null)
   const [panelCollapsed, setPanelCollapsed] = useState(() =>
     readStoredPanelCollapsed(NEW_AGENT_PANEL_ID)
   )
@@ -428,7 +435,37 @@ export function AgentsHome({
     resetPendingSubmit()
   }
 
-  const handleSubmit = (prompt: string, images: Array<ImageChunk>) => {
+  /** ⌘↵ hands the prompt back here on failure, ahead of whatever was typed since. */
+  const failBackgroundStart = (
+    error: unknown,
+    prompt: string,
+    images: Array<ImageChunk>
+  ) => {
+    reportError({ title: "Couldn't start the thread", error })
+    setRestoreDraft((previous) => ({
+      key: (previous?.key ?? 0) + 1,
+      text: prompt,
+      images,
+    }))
+  }
+
+  const announceBackgroundStart = (title: string, open: () => void) => {
+    toast.success("Started in the background", {
+      description: title,
+      action: { label: "Open", onClick: open },
+    })
+  }
+
+  /**
+   * Enter starts the thread and opens it. ⌘↵ starts it in the background: the
+   * composer clears for the next prompt, and the page stays here.
+   */
+  const handleSubmit = (
+    prompt: string,
+    images: Array<ImageChunk>,
+    options?: SubmitOptions
+  ) => {
+    const background = options?.alternate === true
     void requestNotificationPermission().then((perm) => {
       if (perm === "granted") setNotificationsPref(true)
     })
@@ -450,7 +487,7 @@ export function AgentsHome({
         model_id: activeSelection?.modelId ?? null,
         effort: activeSelection?.effort ?? null,
       }
-      setSubmittedDraft(draft)
+      if (!background) setSubmittedDraft(draft)
       setLocalError(null)
       window.localStorage.setItem(LAST_LOCAL_REPO_KEY, cwd)
       void (async () => {
@@ -460,6 +497,10 @@ export function AgentsHome({
             activeSelection?.modelId
           )
           if (credentialError) {
+            if (background) {
+              failBackgroundStart(new Error(credentialError), prompt, images)
+              return
+            }
             resetPendingSubmit()
             setLocalError(credentialError)
             return
@@ -494,11 +535,21 @@ export function AgentsHome({
               ...current.filter((thread) => thread.id !== localSession.id),
             ]
           )
-          await navigate({
-            to: "/agents/local/$sessionId",
-            params: { sessionId: localSession.id },
-          })
+          const openLocal = () =>
+            void navigate({
+              to: "/agents/local/$sessionId",
+              params: { sessionId: localSession.id },
+            })
+          if (background) {
+            announceBackgroundStart(localSession.title, openLocal)
+            return
+          }
+          openLocal()
         } catch (error) {
+          if (background) {
+            failBackgroundStart(error, prompt, images)
+            return
+          }
           resetPendingSubmit()
           setLocalError(
             error instanceof Error
@@ -522,7 +573,7 @@ export function AgentsHome({
       model_id: activeSelection?.modelId ?? null,
       effort: activeSelection?.effort ?? null,
     }
-    setSubmittedDraft(draft)
+    if (!background) setSubmittedDraft(draft)
     setLocalError(null)
 
     const configurable: Record<string, unknown> =
@@ -544,8 +595,12 @@ export function AgentsHome({
 
     const threadId = crypto.randomUUID()
     const pending: PendingCloudSubmit = { threadId, stopRequested: false }
-    pendingRun.current = pending
-    setPendingThreadId(threadId)
+    // A background start is not what this page is waiting for: a submission
+    // after it still opens its own thread.
+    if (!background) {
+      pendingRun.current = pending
+      setPendingThreadId(threadId)
+    }
     void (async () => {
       try {
         await startRun(
@@ -557,6 +612,10 @@ export function AgentsHome({
           })
         )
       } catch (error) {
+        if (background) {
+          failBackgroundStart(error, prompt, images)
+          return
+        }
         // A run that never started has nothing left to cancel, and the page
         // already went back to the empty composer when Stop was pressed.
         if (!pending.stopRequested) handleCloudSubmitError(error)
@@ -570,6 +629,13 @@ export function AgentsHome({
       queryClient.setQueryData(agentThreadKeys.detail(threadId), thread)
       seedAgentThreadLists(queryClient, thread)
       invalidateAgentThreadLists(queryClient)
+      if (background) {
+        announceBackgroundStart(
+          thread.title,
+          () => void navigate({ to: "/agents/$threadId", params: { threadId } })
+        )
+        return
+      }
       if (pending.stopRequested) {
         await cancelPendingThread(threadId)
         return
@@ -644,6 +710,7 @@ export function AgentsHome({
             compact
             placeholder="Do anything"
             onSubmit={handleSubmit}
+            restoreDraft={restoreDraft}
             onStop={
               optimisticDraftThread && runTarget === "cloud"
                 ? stopPendingSubmit
