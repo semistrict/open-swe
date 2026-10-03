@@ -5,10 +5,7 @@ from langchain.chat_models import init_chat_model
 from agent.config import ENV
 from agent.dashboard.options import DEFAULT_MODEL_ID, model_profile_with_context_override
 from agent.utils.gateway import gateway_env_default, gateway_overrides
-from agent.utils.openai_oauth import (
-    build_desktop_openai_oauth_model,
-    desktop_openai_oauth_available,
-)
+from agent.utils.openai_oauth import build_openai_oauth_model, openai_oauth_available
 
 OPENAI_RESPONSES_WS_BASE_URL = "wss://api.openai.com/v1"
 BASETEN_BASE_URL = "https://inference.baseten.co/v1"
@@ -132,7 +129,7 @@ def make_model(model_id: str, *, use_gateway: bool | None = None, **kwargs: Unpa
         model_id.startswith("openai:")
         and not gateway_applied
         and not ENV.OPENAI_API_KEY.optional()
-        and desktop_openai_oauth_available()
+        and openai_oauth_available()
     ):
         model_kwargs.pop("base_url", None)
         oauth_applied = True
@@ -159,7 +156,7 @@ def make_model(model_id: str, *, use_gateway: bool | None = None, **kwargs: Unpa
         model_kwargs["profile"] = profile_override
 
     if oauth_applied:
-        model = build_desktop_openai_oauth_model(
+        model = build_openai_oauth_model(
             model_id.split(":", 1)[1], **cast(dict[str, Any], model_kwargs)
         )
     else:
@@ -322,9 +319,12 @@ def validate_local_dev_llm_config() -> None:
     if (
         model_id.startswith("openai:")
         and not ENV.OPENAI_API_KEY.optional()
-        and not desktop_openai_oauth_available()
+        and not openai_oauth_available()
     ):
-        raise ValueError(f"OPENAI_API_KEY is required for configured model {model_id}")
+        raise ValueError(
+            f"OPENAI_API_KEY is required for configured model {model_id}, "
+            "or OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE for a ChatGPT subscription"
+        )
     elif model_id.startswith("anthropic:") and not ENV.ANTHROPIC_API_KEY.optional():
         raise ValueError(f"ANTHROPIC_API_KEY is required for configured model {model_id}")
     elif model_id.startswith("google_genai:") and not ENV.GOOGLE_API_KEY.optional():

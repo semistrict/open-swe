@@ -8,7 +8,9 @@ from fastapi import HTTPException
 from githubkit.auth import TokenAuthStrategy
 from githubkit.exception import RequestError, RequestFailed, RequestTimeout
 
+from agent.dashboard.dev_login import dev_login_enabled
 from agent.dashboard.profiles import get_valid_access_token
+from agent.github.app import GITHUB_APP_ID
 from agent.github.sdk import GITHUB_API_VERSION, github_sdk
 
 logger = logging.getLogger(__name__)
@@ -87,6 +89,25 @@ async def _fetch_with_token(
 ) -> tuple[list[InstallationSummary], list[RepositorySummary]]:
     headers = {"X-GitHub-Api-Version": GITHUB_API_VERSION}
     async with github_sdk(TokenAuthStrategy(token), timeout=10.0, connect_timeout=3.0) as client:
+        # Without an App there are no installations, and the token is the `gh` CLI's,
+        # which /user/installations rejects: the user's own repos stand in for them.
+        if not GITHUB_APP_ID and dev_login_enabled():
+            records = await _collect(
+                client.rest.paginate(
+                    client.rest(GITHUB_API_VERSION).repos.async_list_for_authenticated_user,
+                    map_func=lambda response: response.json(),
+                    per_page=100,
+                    headers=headers,
+                )
+            )
+            return [], [
+                {
+                    "full_name": repo["full_name"],
+                    "private": repo["private"],
+                    "archived": repo.get("archived", False),
+                }
+                for repo in records
+            ]
         apps = client.rest(GITHUB_API_VERSION).apps
         records = await _collect(
             client.rest.paginate(

@@ -10,7 +10,7 @@ Each thread uses an isolated sandbox. A separate read-only reviewer graph review
 
 ## Local Development
 
-Follow [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for local startup, tunnel configuration, and preserving LangGraph state across worktrees.
+Follow [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for local startup, tunnel configuration, and per-worktree local state.
 
 ## Architecture
 

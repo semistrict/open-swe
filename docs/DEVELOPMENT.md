@@ -2,6 +2,15 @@
 
 Run Open SWE on your machine: the backend and the dashboard on `http://localhost:2024`, with GitHub and Slack webhooks arriving through a tunnel. Deploying it for a team is the [installation guide](INSTALLATION.md).
 
+## Quick start
+
+```bash
+make dev-init   # once per checkout or worktree
+make dev-ui     # every time: http://localhost:2024
+```
+
+`make dev-init` installs the Python and pnpm dependencies, writes `.env` (step 5), and starts the checkout's own Postgres container. It is safe to rerun, after pulling dependency changes for instance, because it only fills in what is missing. `make dev-ui` then starts the backend and the hot-reloading dashboard without repeating any of that. This is enough for the dashboard: sign-in goes through the `gh` CLI, and with no model key the agent runs on your ChatGPT subscription. The steps below add a GitHub App, Slack, and the webhook tunnel.
+
 ## Prerequisites
 
 - **Python 3.14+** and [uv](https://docs.astral.sh/uv/)
@@ -15,9 +24,7 @@ Run Open SWE on your machine: the backend and the dashboard on `http://localhost
 ```bash
 git clone https://github.com/langchain-ai/open-swe.git
 cd open-swe
-uv venv
-source .venv/bin/activate
-uv sync --all-extras
+make dev-init
 ```
 
 ## 2. Create a GitHub App for your machine
@@ -56,39 +63,21 @@ Slack checks the events Request URL against a running backend. If you create the
 
 ## 5. Write `.env`
 
-Create `.env` in the repository root; `langgraph dev` loads it.
+`.env` in the repository root holds the local configuration; `langgraph dev` loads it. `make dev-init` creates it: in a worktree it copies the primary checkout's `.env`, keys and app credentials included, and otherwise it starts from [`.env.example`](../.env.example). It then fills in whichever of these are empty, and never overwrites a value:
 
-```bash
-LANGSMITH_API_KEY=""            # LangSmith → Settings → API Keys; also used for sandboxes and trace links
-LANGSMITH_TRACING="true"        # trace runs to LangSmith
-LANGSMITH_PROJECT=""            # optional project for traces and "View trace" links; default "default"
+- `TOKEN_ENCRYPTION_KEY` (a new Fernet key) and `DASHBOARD_JWT_SECRET`
+- `ALLOWED_GITHUB_USERS` and `CONFIGURED_ADMINS`, set to your `gh` login
+- `OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE`, when no model provider key is set (see below)
 
-ANTHROPIC_API_KEY=""            # any provider key; not needed if you use an LLM gateway (e.g. LangSmith Gateway; see the installation guide)
+Add the GitHub App values from step 2 and the Slack values from step 4 to it. `GITHUB_APP_PRIVATE_KEY` is one double-quoted line with `\n` between the PEM lines, and `SLACK_PUBLIC_BASE_URL` is your domain from step 3.
 
-GITHUB_APP_ID=""                # step 2
-GITHUB_APP_CLIENT_ID=""
-GITHUB_APP_CLIENT_SECRET=""
-GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"   # one double-quoted line, \n between the PEM lines
-GITHUB_WEBHOOK_SECRET=""
-GITHUB_APP_INSTALLATION_ID=""
-ALLOWED_GITHUB_USERS=""         # your GitHub login; required unless ALLOWED_GITHUB_ORGS is set
+**Local sandboxes.** `.env.example` sets `SANDBOX_TYPE=local`: runs execute on your machine, unisolated, since `langsmith` sandboxes need `LANGSMITH_API_KEY` and a public dashboard URL. `make dev` gives each checkout its own `LOCAL_SANDBOX_ROOT_DIR`, `sandbox/` in the checkout's state directory below, so worktrees never share clones and no run works inside the checkout, which is the provider's default. Threads of one backend still share that root.
 
-SLACK_BOT_TOKEN=""              # step 4: OAuth & Permissions → Bot User OAuth Token (xoxb-...)
-SLACK_SIGNING_SECRET=""         # Basic Information → App Credentials
-SLACK_BOT_USER_ID=""            # the bot's member id (bot profile → ⋮ → Copy member ID)
-SLACK_BOT_USERNAME=""           # the bot's handle, e.g. open_swe_you
-SLACK_PUBLIC_BASE_URL="https://<name>.ngrok-free.dev"  # your existing domain from step 3; used by Slack OAuth and the admin manifest
-
-TOKEN_ENCRYPTION_KEY=""         # openssl rand -base64 32  (encrypts stored GitHub and Slack tokens)
-DASHBOARD_JWT_SECRET=""         # openssl rand -hex 32     (signs the session cookie and OAuth state)
-CONFIGURED_ADMINS=""            # your GitHub login or email; admins see the Admin pages
-
-POSTGRES_URI=""                 # local dev defaults to localhost:5433; set this to use another database
-```
+**ChatGPT subscription instead of an API key.** With `OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE` set and no `OPENAI_API_KEY`, OpenAI models (the default without an Anthropic-only setup) run on your ChatGPT plan through the Codex backend. The file is a `langchain-openai` ChatGPT token store, and the backend refreshes it in place. `make dev-init` points it at the store Deep Agents Code signs in to (`~/.deepagents/.state/chatgpt-auth.json`) when that exists, and at `~/.langchain/chatgpt-auth.json` otherwise; `make chatgpt-login` signs in and writes it. Never point it at `~/.codex/auth.json`: rotating its refresh token signs the Codex CLI out.
 
 `LANGGRAPH_URL` defaults to `http://localhost:2024`, and `DASHBOARD_BASE_URL` / `DASHBOARD_API_BASE_URL` default to it, so none of the three is needed locally. Keep them on localhost when setting `SLACK_PUBLIC_BASE_URL` to the tunnel. You only need one model credential: either a provider key or a gateway key if you route model calls through an LLM gateway, such as the [LangSmith Gateway](INSTALLATION.md#4-model-providers-and-api-keys). How the running model is chosen is covered in the same section. Linear, if you use it, comes from the [Linear](INSTALLATION.md#linear) section of the installation guide, with your ngrok domain as the URL.
 
-Open SWE needs a PostgreSQL database for its own tables, and `langgraph dev` does not provide one: it keeps LangGraph's threads and Store in memory, so the platform's Postgres is not there locally. In LangGraph's `local_dev` runtime, Open SWE defaults `POSTGRES_URI` to `postgresql://postgres:postgres@127.0.0.1:5433/postgres`; `make dev` and `make dev-ui` run the matching `postgres:16` container named `open-swe-postgres` when no explicit value is set. Docker Compose binds the container to loopback only and keeps its data in the `open-swe-postgres` volume, so stopping or removing the container preserves your local users, workspaces, and settings. `make postgres` starts it on its own; use `docker compose down` to stop it. Set `POSTGRES_URI` to skip the container and use any database you can create schemas in — see [Analytics storage](INSTALLATION.md#1-create-the-deployment) for what startup migrations create there, including the `repository`, `users`, and `workspace` tables.
+Open SWE needs a PostgreSQL database for its own tables, and `langgraph dev` does not provide one: it keeps LangGraph's threads and Store in memory, so the platform's Postgres is not there locally. Every checkout gets its own: `make dev-init` claims a loopback port from 54320 up that no other checkout uses, and `make dev` and `make dev-ui` start that checkout's `postgres:16` container and point `POSTGRES_URI` at it. Worktrees therefore never share users, settings, or migration history, so a branch that adds a migration cannot break another checkout's startup. Its state lives outside the checkout in `~/.open-swe/<checkout>-<hash>/`: `postgres-port`, the data directory `postgres/`, and the local sandbox root `sandbox/`. Removing the container keeps the data; deleting that directory, after removing a worktree for instance, discards it. `make postgres` starts the container on its own and `make postgres-down` stops it. Set `POSTGRES_URI` to skip the container and use any database you can create schemas in — see [Analytics storage](INSTALLATION.md#1-create-the-deployment) for what startup migrations create there, including the `repository`, `users`, and `workspace` tables.
 
 With a database, every thread created from then on is also recorded into the append-only transcript event log and its LangGraph metadata is stamped `transcript: v2`. The dashboard reads recorded threads from this log by default for everyone. Threads with agent turns from before recording started are never recorded and always read LangGraph state.
 
@@ -96,10 +85,10 @@ With a database, every thread created from then on is also recorded into the app
 
 ## 6. Run
 
-`make dev` refuses to start while something else listens on port 2024, and names the process. When switching worktrees, stop the previous backend gracefully and wait for it to release port 2024 before starting the replacement. Prepare the [worktree state](#langgraph-state-across-worktrees) before startup.
+`make dev` refuses to start while something else listens on port 2024, and names the process. When switching worktrees, stop the previous backend gracefully and wait for it to release port 2024 before starting the replacement. Each worktree has its own [local state](#local-state-across-worktrees).
 
 ```bash
-make build-dashboard   # pnpm install + Vite build into ui/.output/public
+make build-dashboard   # Vite build into ui/.output/public
 make dev               # langgraph dev on http://localhost:2024, serving the API and the dashboard (starts the Postgres container first)
 ```
 
@@ -148,17 +137,14 @@ Record the worktree, process IDs, fixed tunnel domain, and state location in ign
 
 Regenerate the checked-in schema with `make swagger` after changing backend routes or models. The checked-in file can lag the running backend; use its live schema when inspecting deployed routes. Some request/response schemas and authentication requirements are not yet documented. LangGraph runtime endpoints such as `/runs`, `/threads`, and `/assistants` are not included.
 
-## LangGraph state across worktrees
+## Local state across worktrees
 
-`langgraph dev` persists local threads, checkpoints, and Store data under `.langgraph_api` in its working directory. Preserve existing local data when moving development to a new worktree unless you want a clean start.
+Every checkout keeps its own local state, and a new worktree starts clean:
 
-The repository's [`.worktreeinclude`](../.worktreeinclude) includes the root `.langgraph_api` directory. [Local Codex-managed worktrees](https://learn.chatgpt.com/docs/environments/git-worktrees#copy-ignored-local-files-into-managed-worktrees) copy matching ignored files when they are created. Stop the source backend gracefully so it flushes persistence, and back up its state before creating the worktree. This is a snapshot, not ongoing synchronization.
+- `.langgraph_api/` in the checkout, where `langgraph dev` persists threads, checkpoints, and the Store
+- `~/.open-swe/<checkout>-<hash>/`, with its Postgres container's port and data and the local sandbox root (see step 5)
 
-Codex skips source symlinks and preserves files already present in the destination. Create the worktree from the primary checkout containing the actual state directory. For worktrees created with `git worktree add`, or when the source is a symlink, copy the stopped primary checkout's entire `.langgraph_api` directory manually, including hidden files. Preserve any existing destination state rather than overwriting it automatically.
-
-For one continuous local instance across worktrees, link `.langgraph_api` to the primary checkout's state directory instead of copying it. Only one backend may use that shared directory at a time; restart from the desired worktree to switch code. Independently copied state diverges after creation and also retains schedules and integration settings, so avoid running multiple copies against the same live integrations, which can duplicate background work.
-
-Keep state, backups, and environment files ignored by Git. Reuse the existing local environment, including its token-encryption settings, without printing credentials. `.worktreeinclude` copies local state into worktrees; it does not add that state to version control.
+The two halves belong together: a thread's transcript is recorded in Postgres, so threads copied into another checkout without their database open with no history. [`.worktreeinclude`](../.worktreeinclude), which [Codex-managed worktrees](https://learn.chatgpt.com/docs/environments/git-worktrees#copy-ignored-local-files-into-managed-worktrees) read when they are created, therefore seeds only `.env`, and `make dev-init` copies `.env` from the primary checkout for worktrees made with `git worktree add`. Removing a worktree leaves its `~/.open-swe` directory and stopped container behind; `make postgres-down` in the worktree first, then delete the directory.
 
 ## Sign in locally with the `gh` CLI
 
@@ -255,6 +241,9 @@ For "how long until the agent answers", read `@context.step_generation_start_ms`
 
 | Target | What it does |
 |---|---|
+| `make dev-init` | One-time setup of a checkout or worktree: dependencies, `.env` with generated secrets, the Postgres container. Rerunnable |
+| `make postgres`, `make postgres-down` | Start or stop this checkout's Postgres container |
+| `make chatgpt-login` | Signs in with ChatGPT and writes the token store `OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE` names |
 | `make dev` | `langgraph dev` on port 2024: graphs, webhooks, dashboard API, and the bundled dashboard when a build exists |
 | `make dev-ui` | `make web` and `make dev` together, the backend fronting Vite so the UI hot-reloads on port 2024 |
 | `make web` | The Vite dev server alone on port 3000 |

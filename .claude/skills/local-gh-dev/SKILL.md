@@ -57,14 +57,13 @@ session. It is refused unless `langgraph dev` is the runtime, and the
 
 ## Postgres
 
-`make dev` starts an `open-swe-postgres` container unless `POSTGRES_URI` is set, and
-fails with a name conflict when another worktree already started one. Reuse it:
+Each checkout has its own container, project `open-swe-<hash>`, on the loopback port
+`make dev-init` wrote to `~/.open-swe/<checkout>-<hash>/postgres-port`. `make dev` starts it
+and sets `POSTGRES_URI` unless `.env` sets one. Find this checkout's:
 
 ```bash
-docker ps --filter name=open-swe-postgres --format '{{.Names}} {{.Status}} {{.Ports}}'
+docker ps --filter label=com.docker.compose.project --format '{{.Names}} {{.Ports}}'
 ```
-
-It binds `127.0.0.1:5433`, so `POSTGRES_URI=postgresql://postgres:postgres@127.0.0.1:5433/postgres`.
 
 ## The App token, and why `gh` covers it
 
@@ -123,7 +122,7 @@ is stubbed; runs cost money and take minutes.
    is broken":
 
    ```bash
-   docker exec open-swe-postgres psql -U postgres -d postgres \
+   docker exec "$(docker ps -q --filter label=com.docker.compose.project=open-swe-$(printf %s "$PWD" | cksum | cut -d' ' -f1))" psql -U postgres -d postgres \
      -c "SELECT kind, author, summary FROM open_swe.pull_request_guidance"
    ```
 
