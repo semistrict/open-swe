@@ -353,21 +353,6 @@ function CloudAgentsPage() {
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Slack">
-        <div className="divide-y divide-border">
-          <SettingsRow
-            label="Concierge mode"
-            description="Your whole DM with Open SWE becomes one private thread it always answers in, instead of a new thread for every message."
-            control={
-              <Switch
-                checked={profile.data?.concierge_mode ?? false}
-                onCheckedChange={(v) => persist({ concierge_mode: v })}
-              />
-            }
-          />
-        </div>
-      </SettingsSection>
-
       <SettingsSection title="Rules">
         <SettingsNavRow
           to="/agents/instructions"
