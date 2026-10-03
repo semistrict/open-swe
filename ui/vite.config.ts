@@ -1,6 +1,7 @@
 import http from "node:http"
 import { execSync } from "node:child_process"
 import { mkdirSync, writeFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import { defineConfig } from "vite"
 import { devtools } from "@tanstack/devtools-vite"
 import { tanstackStart } from "@tanstack/react-start/plugin/vite"
@@ -217,6 +218,34 @@ function deployedBackendSession(): Plugin | null {
   }
 }
 
+// Dev-only sink for flinches (src/lib/flinch): the page posts the last ~30s it
+// recorded and this writes it under the repository's ignored logs/, where
+// `mise run flinch` and agents read it.
+const FLINCH_DIR = fileURLToPath(new URL("../logs/flinches/", import.meta.url))
+
+function flinchSink(): Plugin {
+  return {
+    name: "flinch-sink",
+    apply: "serve",
+    enforce: "pre",
+    configureServer(server) {
+      server.middlewares.use("/__flinch", (req, res, next) => {
+        if (req.method !== "POST") return next()
+        const chunks: Array<Buffer> = []
+        req.on("data", (chunk: Buffer) => chunks.push(chunk))
+        req.on("end", () => {
+          const stamp = new Date().toISOString().replace(/[:.]/g, "-")
+          const path = `${FLINCH_DIR}${stamp}.json`
+          mkdirSync(FLINCH_DIR, { recursive: true })
+          writeFileSync(path, Buffer.concat(chunks))
+          res.setHeader("Content-Type", "application/json")
+          res.end(JSON.stringify({ path }))
+        })
+      })
+    },
+  }
+}
+
 // The Electron app and the service worker's offline navigation both load a
 // client-only `_shell.html`. SSR alone doesn't emit one, so prerender `/` with
 // the header that tells the Start handler to render the shell instead of the route.
@@ -304,6 +333,7 @@ const config = defineConfig({
   },
   worker: { format: "es" },
   plugins: [
+    flinchSink(),
     deployedBackendSession(),
     mockHarnessProxy(),
     devtools(),

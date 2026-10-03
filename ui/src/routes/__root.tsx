@@ -25,6 +25,23 @@ import { apiWarmupScript } from "@/features/agents/lib/apiWarmup"
 import { isPerfHudEnabled } from "@/lib/perf/trace"
 
 const PerfHud = lazy(() => import("@/lib/perf/PerfHud"))
+// Dev builds only, so rrweb never reaches a production bundle.
+const FlinchRecorder = import.meta.env.DEV
+  ? lazy(() => import("@/lib/flinch/FlinchRecorder"))
+  : null
+
+/** Client-only: rrweb records the live DOM, which a server render does not have. */
+function FlinchRecorderMount() {
+  const [mounted, setMounted] = useState(false)
+  // oxlint-disable-next-line react/set-state-in-effect
+  useEffect(() => setMounted(true), [])
+  if (!FlinchRecorder || !mounted) return null
+  return (
+    <Suspense fallback={null}>
+      <FlinchRecorder />
+    </Suspense>
+  )
+}
 
 /** Client-only: the flag lives in localStorage, so the server render never shows it. */
 function PerfHudMount() {
@@ -112,6 +129,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           <VersionMismatchBanner />
           <AppCommandProvider>{children ?? <Outlet />}</AppCommandProvider>
           <PerfHudMount />
+          <FlinchRecorderMount />
           {import.meta.env.VITE_DEVTOOLS !== "false" && (
             <>
               <TanStackDevtools

@@ -217,6 +217,23 @@ mise run desktop              # terminal 2
 
 Development connects to `http://localhost:2024`. For a hosted backend run `pnpm --dir desktop run start -- --backend-url=https://your-backend.example.com` or set `OPEN_SWE_BACKEND_URL`. `pnpm --dir desktop run pack` creates an unpacked application and `pnpm --dir desktop run dist` an installer. Packaged builds ask for the organization's backend URL on first launch and never default to the maintainers' deployment. The GitHub App must allow `<backend-url>/dashboard/api/auth/callback` for desktop login.
 
+## Capturing UI jank (flinch)
+
+Some UI problems are easier to react to than describe: a frame of a loading state, a row that jumps, a logo that blinks out. Dev builds of the dashboard record the page continuously and keep the last ~30 seconds. When something feels off, press **Alt+Shift+F** (a "flinch"), and that window is saved to `logs/flinches/`: an [rrweb](https://github.com/rrweb-io/rrweb) DOM recording plus the browser's layout-shift, long-frame, slow-interaction, network, and console signals on the same clock. An agent driving the browser can flinch on purpose with a note: `await window.__openSweFlinch.flinch("what I was doing")`.
+
+```bash
+mise run flinch                 # the newest flinch
+mise run flinch -- path/to/flinch.json --before 6000 --fps 60
+```
+
+`flinch` replays the recording in headless Chromium and writes, next to the file:
+
+- `report.md`: what changed on screen around the flinch (elements on screen for under 300 ms, remounts, text and attribute flips, layout shifts, long frames, slow interactions, console errors), each at its frame number
+- `frames/` and `sheets/`: labeled frames and contact sheets of consecutive frames, for reviewing images
+- `slowmo.mp4` and `video-review.md`: the frames as slow motion (10× by default), reviewed by a video model through OpenRouter (`google/gemini-3.8-flash` by default, `--model` to change it), using `OPENROUTER_API_KEY` or `~/.openrouter/api_key`; `--no-video-review` skips it
+
+The replay loads images and fonts from the dashboard's origin, so keep the dev server running while analyzing.
+
 ## Profiling thread load and streaming
 
 The dashboard records two performance spans, in every build, with the same code path locally and in production (`ui/src/lib/perf/`):
@@ -252,6 +269,7 @@ For "how long until the agent answers", read `@context.step_generation_start_ms`
 | `mise run tunnel <domain>` | `ngrok http 2024` on your static domain, exposing only `/webhooks/*` |
 | `mise run fastapi` | The FastAPI app alone on port 8000, no LangGraph runtime (`make run`) |
 | `mise run desktop` | The Electron app in development, against a backend on port 2024 |
+| `mise run flinch [file]` | Turns a flinch (Alt+Shift+F in the dashboard) into frames, a slow-motion video, and a report |
 | `mise run migration "<description>"` | Creates the next database migration |
 | `mise run swagger` | Regenerates `swagger.json` from the backend routes |
 | `mise run test [path]` | `pytest -vvv` on `tests/` or the given path |

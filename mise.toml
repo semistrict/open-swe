@@ -66,6 +66,11 @@ run = "make --no-print-directory install-checkout"
 description = "Build the oswe CLI binary into cli/dist/oswe"
 run = "make --no-print-directory cli"
 
+[tasks.flinch]
+description = "Turn a flinch (Alt+Shift+F in the dashboard) into frames, a slow-motion video, and a report"
+usage = 'arg "[args]" var=#true help="[flinch.json] [--before ms] [--fps n] [--slow n] [--model id] [--no-video-review]"'
+run = 'node ui/scripts/flinch.ts ${usage_args:-}'
+
 # --- Changing code -------------------------------------------------------------------------
 
 [tasks.migration]
