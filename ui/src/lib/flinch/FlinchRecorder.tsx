@@ -13,11 +13,32 @@ declare global {
 async function flinch(note?: string): Promise<string> {
   try {
     const path = await saveFlinch(note)
-    toast.success("Flinch saved", { description: path })
+    toast.success("Flinch saved", {
+      description: path,
+      action: {
+        label: "Copy",
+        onClick: () => void copyPath(path),
+      },
+    })
     return path
   } catch (error) {
     toast.error("Could not save the flinch", { description: String(error) })
     throw error
+  }
+}
+
+async function copyPath(path: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(path)
+    toast.success("Flinch path copied")
+  } catch (error) {
+    // Keep the path on screen to select by hand.
+    toast.error("Could not copy the flinch path", {
+      description: path,
+      duration: Infinity,
+      closeButton: true,
+    })
+    console.warn("Could not copy the flinch path", error)
   }
 }
 
