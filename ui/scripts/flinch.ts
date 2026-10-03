@@ -38,6 +38,15 @@ const UI_DIR = dirname(dirname(fileURLToPath(import.meta.url)))
 const FLINCH_DIR = join(UI_DIR, "..", "logs", "flinches")
 const RRWEB_DIST = join(UI_DIR, "node_modules", "rrweb", "dist")
 const DEFAULT_VIDEO_MODEL = "google/gemini-3.8-flash"
+/** The taste spec the ui-jank skill keeps; the video reviewer judges against it. */
+const TASTE_SPEC = join(
+  UI_DIR,
+  "..",
+  ".claude",
+  "skills",
+  "ui-jank",
+  "TASTE.md"
+)
 /** Elements that live shorter than this, or come back this fast, read as flicker. */
 const FLICKER_MS = 300
 /** A value that changes and changes back within this reads as a flip. */
@@ -622,15 +631,9 @@ async function videoReview(
 
 The video is a frame-by-frame replay of the last few seconds before a person reacted to something that felt wrong. It plays ${context.slow}x slower than real time (${context.fps} captured frames per real second). The bar at the bottom of every frame shows its frame number and its time relative to the moment the person reacted.
 
-${context.note ? `What the person said: "${context.note}"\n\n` : ""}Look for, frame by frame:
-- flicker: something appears, disappears, or reappears for a frame or two
-- layout shift: content jumping position
-- flashes of empty, loading, or stale content before the real content
-- loading indicators shown too briefly to read
-- scroll jumps or lost scroll position
-- lost focus or selection
-- content that briefly renders in the wrong place, size, style, or theme
-- optimistic updates that visibly roll back
+${context.note ? `What the person said: "${context.note}"\n\n` : ""}Judge it against how this app should feel, the team's taste spec:
+
+${existsSync(TASTE_SPEC) ? readFileSync(TASTE_SPEC, "utf8") : "(no taste spec found)"}
 
 An automated DOM analysis flagged these moments (times relative to the reaction):
 ${context.findings || "(nothing flagged)"}

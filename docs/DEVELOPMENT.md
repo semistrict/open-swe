@@ -230,9 +230,11 @@ mise run flinch -- path/to/flinch.json --before 6000 --fps 60
 
 - `report.md`: what changed on screen around the flinch (elements on screen for under 300 ms, remounts, text and attribute flips, layout shifts, long frames, slow interactions, console errors), each at its frame number
 - `frames/` and `sheets/`: labeled frames and contact sheets of consecutive frames, for reviewing images
-- `slowmo.mp4` and `video-review.md`: the frames as slow motion (10× by default), reviewed by a video model through OpenRouter (`google/gemini-3.8-flash` by default, `--model` to change it), using `OPENROUTER_API_KEY` or `~/.openrouter/api_key`; `--no-video-review` skips it
+- `slowmo.mp4` and `video-review.md`: the frames as slow motion (10× by default), reviewed by a video model through OpenRouter (`google/gemini-3.8-flash` by default, `--model` to change it) against the taste spec, using `OPENROUTER_API_KEY` or `~/.openrouter/api_key`; `--no-video-review` skips it
 
 The replay loads images and fonts from the dashboard's origin, so keep the dev server running while analyzing.
+
+The [`ui-jank`](../.claude/skills/ui-jank/SKILL.md) skill is how agents use this: they read its taste spec, [`TASTE.md`](../.claude/skills/ui-jank/TASTE.md), before changing the UI, flinch the flows they touched before calling a change done, and turn each confirmed flinch into a fix and a lesson in the spec.
 
 ## Profiling thread load and streaming
 
