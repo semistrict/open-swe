@@ -9,7 +9,9 @@ depends_on = ${repr(depends_on)}
 
 
 def upgrade() -> None:
-    ${upgrades if upgrades else "pass"}
+    # A hot-reloading dev server applies a new migration as soon as it is
+    # written; failing until this is filled in keeps it from recording an empty one.
+    ${upgrades if upgrades else 'raise NotImplementedError("write this migration")'}
 
 
 def downgrade() -> None:
