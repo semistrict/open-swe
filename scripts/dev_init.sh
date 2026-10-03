@@ -86,4 +86,4 @@ if [ -z "$configured" ]; then
   [ -e "$token_file" ] || echo "dev-init: no model key in .env; sign in with ChatGPT: make chatgpt-login" >&2
 fi
 
-echo "dev-init: done. Start with 'make dev-ui'."
+echo "dev-init: done. Start with 'mise run dev-ui' or 'make dev-ui'."

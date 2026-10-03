@@ -5,17 +5,18 @@ Run Open SWE on your machine: the backend and the dashboard on `http://localhost
 ## Quick start
 
 ```bash
-make dev-init   # once per checkout or worktree
-make dev-ui     # every time: http://localhost:2024
+mise trust          # once per checkout: allow its mise.toml
+mise run dev-init   # once per checkout or worktree
+mise run dev-ui     # every time: http://localhost:2024
 ```
 
-`make dev-init` installs the Python and pnpm dependencies, writes `.env` (step 5), and starts the checkout's own Postgres container. It is safe to rerun, after pulling dependency changes for instance, because it only fills in what is missing. `make dev-ui` then starts the backend and the hot-reloading dashboard without repeating any of that. This is enough for the dashboard: sign-in goes through the `gh` CLI, and with no model key the agent runs on your ChatGPT subscription. The steps below add a GitHub App, Slack, and the webhook tunnel.
+[mise](https://mise.jdx.dev/) installs the Node, pnpm, and uv versions [`mise.toml`](../mise.toml) pins (uv brings Python) and runs the matching Makefile targets with them, so `make dev-init` and `make dev-ui` do the same with tools you installed yourself. `dev-init` installs the Python and pnpm dependencies, writes `.env` (step 5), and starts the checkout's own Postgres container. It is safe to rerun, after pulling dependency changes for instance, because it only fills in what is missing. `dev-ui` then starts the backend and the hot-reloading dashboard without repeating any of that. This is enough for the dashboard: sign-in goes through the `gh` CLI, and with no model key the agent runs on your ChatGPT subscription. The steps below add a GitHub App, Slack, and the webhook tunnel.
 
 ## Prerequisites
 
-- **Python 3.14+** and [uv](https://docs.astral.sh/uv/)
+- [mise](https://mise.jdx.dev/) (`brew install mise`), which installs uv, Node, and pnpm; without it, **Python 3.14+** with [uv](https://docs.astral.sh/uv/), and Node 24 with [pnpm](https://pnpm.io/)
+- [Docker](https://docs.docker.com/get-docker/) for the local Postgres
 - [LangGraph CLI](https://docs.langchain.com/langsmith/cli) (installed by `uv sync`)
-- Node 22.22.2+ and [pnpm](https://pnpm.io/) for the dashboard
 - A free [ngrok](https://ngrok.com/) account, so GitHub and Slack can reach your local backend (step 3)
 - A Slack workspace where you may create apps, and a GitHub account or organization where you may create a GitHub App
 
@@ -24,7 +25,7 @@ make dev-ui     # every time: http://localhost:2024
 ```bash
 git clone https://github.com/langchain-ai/open-swe.git
 cd open-swe
-make dev-init
+mise trust && mise run dev-init
 ```
 
 ## 2. Create a GitHub App for your machine

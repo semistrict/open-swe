@@ -1,0 +1,31 @@
+# Toolchain and entry points for local development (docs/DEVELOPMENT.md). The tasks run
+# the Makefile's targets with these tools on PATH, so `mise run <task>` and `make <target>`
+# stay interchangeable and the logic lives in one place. uv brings Python itself.
+[tools]
+node = "24"                # what CI runs
+pnpm = "11.22.0"           # keep equal to packageManager in package.json
+uv = "latest"
+
+[tasks.dev-init]
+description = "One-time setup of this checkout: dependencies, .env, its Postgres container"
+run = "make --no-print-directory dev-init"
+
+[tasks.dev-ui]
+description = "Backend on :2024 fronting the hot-reloading dashboard"
+run = "make --no-print-directory dev-ui"
+
+[tasks.dev]
+description = "Backend on :2024, serving the dashboard build"
+run = "make --no-print-directory dev"
+
+[tasks.postgres]
+description = "Start this checkout's Postgres container"
+run = "make --no-print-directory postgres"
+
+[tasks.postgres-down]
+description = "Stop this checkout's Postgres container"
+run = "make --no-print-directory postgres-down"
+
+[tasks.chatgpt-login]
+description = "Sign in with ChatGPT for OpenAI models without an API key"
+run = "make --no-print-directory chatgpt-login"
