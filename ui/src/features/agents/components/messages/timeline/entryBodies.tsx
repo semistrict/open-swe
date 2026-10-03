@@ -1,7 +1,11 @@
 import { memo } from "react"
 
+import { MessageImage } from "../MessageImage"
 import { ToolResultBody } from "./ToolResultBody"
-import type { ToolExecutionChunk } from "@/features/agents/lib/types"
+import type {
+  AnyImageChunk,
+  ToolExecutionChunk,
+} from "@/features/agents/lib/types"
 
 export const ShellEntryBody = memo(function ShellEntryBody({
   chunk,
@@ -41,6 +45,30 @@ export const ShellEntryBody = memo(function ShellEntryBody({
           Waiting for approval…
         </p>
       )}
+    </div>
+  )
+})
+
+/** A tool result that is an image (a read of a PNG, say): the image itself, then any text. */
+export const ToolImagesBody = memo(function ToolImagesBody({
+  images,
+  output,
+}: {
+  images: Array<AnyImageChunk>
+  output?: string | null
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {images.map((image, index) => (
+          <MessageImage
+            key={index}
+            chunk={image}
+            className="block h-auto max-h-80 max-w-full rounded-md border border-border/60 object-contain"
+          />
+        ))}
+      </div>
+      {output && <ToolResultBody value={output} />}
     </div>
   )
 })

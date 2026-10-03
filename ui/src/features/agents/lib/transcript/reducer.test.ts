@@ -11,6 +11,7 @@ import {
   subagentMessages,
   toMessages,
 } from "./reducer"
+import { attachmentUrl } from "./api"
 import type { TranscriptState } from "./reducer"
 import type { Message, ToolExecutionChunk } from "@/features/agents/lib/types"
 import type { AnyImageChunk } from "@/features/agents/lib/types"
@@ -80,6 +81,7 @@ function toolCall(
     status: "completed",
     output_preview: null,
     has_output: false,
+    attachments: null,
     namespace: [],
     ...row,
   }
@@ -700,6 +702,34 @@ describe("tool output", () => {
     )
 
     expect(readChunk(settled)?.loadOutput).toBeTypeOf("function")
+  })
+
+  it("shows an image a tool returned as the image, not as text", () => {
+    const settled = applyEvent(
+      fromSnapshot(twoTurnSnapshot()),
+      toolCompleted(11, {
+        has_output: false,
+        attachments: [
+          {
+            mime_type: "image/png",
+            attachment_id: "image-1",
+            file_name: null,
+            url: null,
+          },
+        ],
+      })
+    )
+
+    const chunk = readChunk(settled)
+    expect(chunk?.output).toBeUndefined()
+    expect(chunk?.images).toEqual([
+      {
+        kind: "image",
+        url: attachmentUrl("thread-1", "image-1"),
+        credentials: "session",
+        mimeType: "image/png",
+      },
+    ])
   })
 })
 

@@ -107,6 +107,8 @@ export interface ToolExecutionChunk {
   input?: Record<string, unknown>
   status: AcpToolStatus
   output?: string
+  /** Images the tool returned (a read of a PNG, say), shown inline. */
+  images?: Array<AnyImageChunk>
   /**
    * Fetches the call's full output, for sources that only hold a preview (the
    * transcript log keeps large outputs out of its snapshot). Present only when

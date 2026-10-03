@@ -334,16 +334,24 @@ def _image_bytes(block: Mapping[str, object]) -> tuple[str, bytes] | None:
 def _human_attachments(
     message: HumanMessage, message_id: str
 ) -> tuple[list[MessageAttachment], tuple[PendingAttachment, ...]]:
-    """Files on a human message, as event metadata plus the bytes to store.
-
-    Only standard base64 image blocks are captured; a remote-URL image is
-    referenced rather than copied, and anything else is skipped with a log.
-    """
+    """Files on a human message, as event metadata plus the bytes to store."""
     try:
         blocks = message.content_blocks
     except Exception:
         logger.debug("Could not read content blocks for attachments", exc_info=True)
         return [], ()
+    return _image_attachments(blocks, message_id)
+
+
+def _image_attachments(
+    blocks: Sequence[object], owner_id: str
+) -> tuple[list[MessageAttachment], tuple[PendingAttachment, ...]]:
+    """The image blocks among ``blocks``, as event metadata plus the bytes to store.
+
+    ``owner_id`` keys the bytes: the message, or the tool call that returned
+    them. Only standard base64 image blocks are captured; a remote-URL image is
+    referenced rather than copied, and anything else is skipped with a log.
+    """
     attachments: list[MessageAttachment] = []
     pending: list[PendingAttachment] = []
     for block in blocks:
@@ -357,7 +365,7 @@ def _human_attachments(
             else:
                 logger.warning(
                     "Skipping a transcript attachment with no bytes and no url",
-                    extra={"transcript": {"message_id": message_id}},
+                    extra={"transcript": {"message_id": owner_id}},
                 )
             continue
         mime_type, data = decoded
@@ -367,7 +375,7 @@ def _human_attachments(
             pending.append(
                 PendingAttachment(
                     attachment_id=attachment_id,
-                    message_id=message_id,
+                    message_id=owner_id,
                     position=len(attachments),
                     mime_type=mime_type,
                     file_name=file_name if isinstance(file_name, str) else None,
@@ -378,7 +386,7 @@ def _human_attachments(
             logger.warning(
                 "Skipping an unsupported transcript attachment",
                 exc_info=True,
-                extra={"transcript": {"message_id": message_id, "mime_type": mime_type}},
+                extra={"transcript": {"message_id": owner_id, "mime_type": mime_type}},
             )
             continue
         attachments.append(
@@ -391,12 +399,29 @@ def _human_attachments(
     return attachments, tuple(pending)
 
 
-def _tool_output(content: object) -> tuple[str, bool]:
+@dataclass(frozen=True)
+class _ToolOutput:
+    """What a tool returned, as the transcript keeps it."""
+
+    text: str
+    truncated: bool
+    attachments: list[MessageAttachment] = field(default_factory=list)
+    pending: tuple[PendingAttachment, ...] = ()
+
+
+def _tool_output(content: object, tool_call_id: str) -> _ToolOutput:
+    """The output text, capped, and any images, stored as attachments."""
+    blocks = (
+        content if isinstance(content, list) else [content] if isinstance(content, dict) else []
+    )
+    attachments, pending = _image_attachments(blocks, tool_call_id)
     if isinstance(content, str):
         text = content
     elif isinstance(content, (list, dict)):
         parts: list[str] = []
-        for block in content if isinstance(content, list) else [content]:
+        for block in blocks:
+            if isinstance(block, Mapping) and block.get("type") == "image":
+                continue
             if isinstance(block, Mapping) and isinstance(block.get("text"), str):
                 parts.append(cast(str, block["text"]))
             else:
@@ -405,9 +430,10 @@ def _tool_output(content: object) -> tuple[str, bool]:
     else:
         text = str(content)
     encoded = text.encode("utf-8", "replace")
-    if len(encoded) <= TOOL_OUTPUT_CAP_BYTES:
-        return text, False
-    return encoded[:TOOL_OUTPUT_CAP_BYTES].decode("utf-8", "ignore"), True
+    truncated = len(encoded) > TOOL_OUTPUT_CAP_BYTES
+    if truncated:
+        text = encoded[:TOOL_OUTPUT_CAP_BYTES].decode("utf-8", "ignore")
+    return _ToolOutput(text, truncated, attachments, pending)
 
 
 class _DeltaHandler(AsyncCallbackHandler):
@@ -950,7 +976,7 @@ class TranscriptMiddleware(OpenSWEMiddleware):
                 tool_call_id,
                 namespace,
                 "error",
-                *_tool_output(f"{type(exc).__name__}: {exc}"),
+                _tool_output(f"{type(exc).__name__}: {exc}", tool_call_id),
             )
             raise
         finally:
@@ -964,8 +990,7 @@ class TranscriptMiddleware(OpenSWEMiddleware):
         tool_call_id: str,
         namespace: list[str],
         status: Literal["completed", "error"],
-        text: str,
-        truncated: bool,
+        output: _ToolOutput,
     ) -> None:
         try:
             state.enqueue(
@@ -976,15 +1001,17 @@ class TranscriptMiddleware(OpenSWEMiddleware):
                         turn_id=state.turn_id,
                         tool_call_id=tool_call_id,
                         status=status,
-                        output_preview=text[:TOOL_OUTPUT_PREVIEW_CHARS] or None,
-                        output_truncated=truncated,
-                        has_output=bool(text),
+                        output_preview=output.text[:TOOL_OUTPUT_PREVIEW_CHARS] or None,
+                        output_truncated=output.truncated,
+                        has_output=bool(output.text),
                         namespace=namespace,
+                        attachments=output.attachments or None,
                     ),
                     actor_kind="agent",
                     run_id=state.run_id,
                     turn_id=state.turn_id,
-                    tool_output=text,
+                    tool_output=output.text,
+                    attachments=output.pending,
                 )
             )
         except Exception:
@@ -1152,8 +1179,8 @@ def _json_object(value: object) -> JsonObject:
 
 def _result_output(
     result: ToolMessage | GraphCommand[Any], tool_call_id: str
-) -> tuple[Literal["completed", "error"], str, bool]:
-    """The tool's status, its capped output text, and whether capping cut it."""
+) -> tuple[Literal["completed", "error"], _ToolOutput]:
+    """The tool's status and what it returned."""
     if isinstance(result, ToolMessage):
         message: ToolMessage | None = result
     else:
@@ -1168,9 +1195,9 @@ def _result_output(
             None,
         )
     if message is None:
-        return "completed", "", False
+        return "completed", _ToolOutput("", False)
     status: Literal["completed", "error"] = "error" if message.status == "error" else "completed"
-    return status, *_tool_output(message.content)
+    return status, _tool_output(message.content, tool_call_id)
 
 
 def _attach(handler: AsyncCallbackHandler) -> CallbackManager | AsyncCallbackManager | None:

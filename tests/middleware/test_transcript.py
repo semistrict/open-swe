@@ -1,6 +1,7 @@
 """Transcript middleware: paragraph batching and the emitted event sequence."""
 
 import asyncio
+import base64
 import itertools
 from collections.abc import Sequence
 from typing import Any
@@ -182,6 +183,39 @@ async def test_a_run_without_a_turn_requests_one_only_for_a_new_message(
     await middleware.aafter_agent({"messages": history}, None)
 
     assert engine.types == expected
+
+
+async def test_an_image_a_tool_returns_is_an_attachment_not_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _install(monkeypatch, transcribed=True, turn_id=uuid7())
+    middleware = mw.TranscriptMiddleware()
+    human = HumanMessage(content="look at the screenshot", id="human-1")
+    await middleware.abefore_agent({"messages": [human]}, None)
+    png = b"\x89PNG\r\n\x1a\n"
+
+    async def tool_handler(request: ToolCallRequest) -> ToolMessage:
+        return ToolMessage(
+            content_blocks=[
+                {
+                    "type": "image",
+                    "base64": base64.b64encode(png).decode(),
+                    "mime_type": "image/png",
+                }
+            ],
+            tool_call_id="call-1",
+        )
+
+    await middleware.awrap_tool_call(_tool_request("call-1", {"messages": [human]}), tool_handler)
+    await middleware.aafter_agent({"messages": [human]}, None)
+
+    completed = next(c for c in engine.commands if c.event.type == "tool.completed")
+    assert completed.event.output_preview is None
+    assert completed.event.has_output is False
+    assert [(a.mime_type, a.attachment_id) for a in completed.event.attachments] == [
+        ("image/png", completed.attachments[0].attachment_id)
+    ]
+    assert [(p.message_id, p.data) for p in completed.attachments] == [("call-1", png)]
 
 
 async def test_only_mid_run_human_messages_are_recorded_once(

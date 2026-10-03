@@ -5546,6 +5546,20 @@
       "ToolCallView": {
         "additionalProperties": false,
         "properties": {
+          "attachments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachments"
+          },
           "ended_at": {
             "anyOf": [
               {
@@ -5631,6 +5645,7 @@
           "output_preview",
           "output_truncated",
           "has_output",
+          "attachments",
           "namespace",
           "started_at",
           "ended_at"

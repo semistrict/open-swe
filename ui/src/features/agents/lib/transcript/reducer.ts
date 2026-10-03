@@ -79,6 +79,8 @@ export interface TranscriptToolCallState {
   outputComplete: boolean
   /** Whether the server holds output worth fetching on expand. */
   hasOutput: boolean
+  /** Images the tool returned. */
+  attachments: ReadonlyArray<TranscriptAttachment>
   namespace: Namespace
   startedAt: string
 }
@@ -224,6 +226,7 @@ function indexToolCalls(
       // whether it is the whole output, so the endpoint stays available.
       outputComplete: false,
       hasOutput: row.has_output,
+      attachments: row.attachments ?? [],
       namespace: row.namespace,
       startedAt: row.started_at,
     }
@@ -738,6 +741,7 @@ export function applyEvent(
         output: null,
         outputComplete: false,
         hasOutput: false,
+        attachments: [],
         namespace: payload.namespace,
         startedAt: at,
       })
@@ -758,6 +762,7 @@ export function applyEvent(
           payload.output_truncated
         ),
         hasOutput: payload.has_output,
+        attachments: payload.attachments ?? [],
       })
       break
     }
@@ -852,6 +857,8 @@ function toolChunk(
   }
   const output = call.output?.trim()
   if (output) chunk.output = output
+  const images = imageChunks(threadId, call.attachments)
+  if (images.length) chunk.images = images
   if (call.hasOutput && !call.outputComplete) {
     chunk.loadOutput = async () =>
       (await fetchToolOutput(threadId, call.toolCallId)).output

@@ -13,9 +13,10 @@ import {
 } from "../renderItems"
 import { MessageCopyButton } from "./MessageCopyButton"
 import { WorkEntryRow } from "./WorkEntryRow"
+import type { WorkEntryBody } from "./WorkEntryRow"
 import { describeWorkEntry, latestDiff } from "./workEntry"
 import { TurnFoldRow, WorkGroupToggleRow } from "./foldRows"
-import { ShellEntryBody } from "./entryBodies"
+import { ShellEntryBody, ToolImagesBody } from "./entryBodies"
 import type { ReactNode } from "react"
 import type { RenderItem } from "../renderItems"
 import type { ApprovalCallbacks } from "../types"
@@ -57,6 +58,15 @@ function EditWorkEntry({
   )
 }
 
+/** The expanded body of a tool row whose result has images; the row's text fallback otherwise. */
+function toolResultBody(chunk: ToolExecutionChunk): WorkEntryBody | undefined {
+  const { images } = chunk
+  if (!images?.length) return undefined
+  return ({ loadedText }) => (
+    <ToolImagesBody images={images} output={loadedText ?? chunk.output} />
+  )
+}
+
 /**
  * A run of related tool calls (exploration, mostly). Collapsed, it shows only
  * the most recent entries plus a toggle for the rest.
@@ -91,6 +101,7 @@ function WorkGroup({
           key={chunk.toolCallId || `work-${index}`}
           entry={describeWorkEntry(chunk, repoPath)}
           timestamp={chunk.timestamp}
+          body={toolResultBody(chunk)}
         />
       ))}
     </div>
@@ -267,6 +278,7 @@ export function AgentTurn({
             key={item.key}
             entry={describeWorkEntry(item.chunk, repoPath)}
             timestamp={item.chunk.timestamp}
+            body={toolResultBody(item.chunk)}
           />
         )
 
