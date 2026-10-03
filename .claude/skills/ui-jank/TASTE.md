@@ -19,7 +19,7 @@ Navigation keeps the old view whole until the new one can render, then swaps it 
 A loading indicator appears only once the wait is long enough to notice (about 300 ms), and once shown it stays long enough to read (about 500 ms). A fast load shows the content and nothing else.
 
 - **2026-10-03, fixed.** Every sent message showed "Sending" under its bubble for ~50 ms before the transcript echoed it (flinch `2026-10-03T05-28-48-951Z`, −6583 ms). `UserMessage` now holds that row empty and says "Sending" only after 300 ms.
-- **2026-10-03, open.** The sidebar's running spinner shows for ~40 ms on send, then stays off for the whole run (flinch `2026-10-03T05-37-26-540Z`, −5581 ms). A thread-list refetch replaces the optimistic `running` with the dashboard status, which follows LangGraph and only turns `running` once the queued run starts. The transcript already knows the thread is running.
+- **2026-10-03, fixed.** The sidebar's running spinner showed for ~40 ms on send, then stayed off for the whole run (flinch `2026-10-03T05-37-26-540Z`, −5581 ms). Marking the thread running started the list poll at once, racing the send to the server; summaries followed LangGraph, which only turns busy once the queued run starts, so the poll said idle and polling stopped. Summaries of transcript threads now report running while the transcript has an open turn, the open thread mirrors its live transcript status into the cached thread, and a newly started poll waits one interval (flinch `2026-10-03T05-51-10-409Z`: on from send to reply).
 
 ## Layout holds still
 

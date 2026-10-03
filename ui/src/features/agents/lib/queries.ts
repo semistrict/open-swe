@@ -568,6 +568,7 @@ export function useSeedAgentThreadDetails(
 }
 
 export const SIDEBAR_PAGE_SIZE = 10
+const PAGE_POLL_INTERVAL_MS = 2000
 
 function sidebarPageParams({
   includeAutomations,
@@ -1277,7 +1278,13 @@ export function useInfiniteThreadsPages(
       options.pollWhileRunning &&
       pollOffsets.length > 0
     ),
-    refetchInterval: 2000,
+    // The pages are fresh when a thread starts polling: they just loaded, or a
+    // send just marked it running. Polling at once would race that send to the
+    // server and briefly report the thread idle, so the first poll waits a turn.
+    initialData: [],
+    initialDataUpdatedAt: Date.now,
+    staleTime: PAGE_POLL_INTERVAL_MS,
+    refetchInterval: PAGE_POLL_INTERVAL_MS,
   })
   return pagesQuery
 }

@@ -31,6 +31,7 @@ import { contextTokensFromUsageMetadata } from "@/features/agents/lib/contextUsa
 import { attachmentUrl, fetchToolOutput } from "./api"
 import type { StructuredEntity } from "@/features/agents/lib/structuredInputMessages"
 import type {
+  AgentStatus,
   AnyImageChunk,
   Chunk,
   Message,
@@ -465,6 +466,25 @@ function isCancelledBeforeStart(turn: TranscriptTurnState): boolean {
     turn.runId !== null &&
     turn.startedAt === null
   )
+}
+
+/**
+ * The thread's status as the dashboard names it: running while any turn is
+ * open, otherwise how the newest turn ended.
+ */
+export function agentStatusOf(state: TranscriptState): AgentStatus {
+  if (state.status === "running") return "running"
+  const newest = state.turns[state.turnOrder.at(-1) ?? ""]
+  switch (newest?.state) {
+    case "failed":
+      return "error"
+    case "interrupted":
+      return "interrupted"
+    case "completed":
+      return "finished"
+    default:
+      return state.status === "error" ? "error" : "idle"
+  }
 }
 
 /** A follow-up waiting for the live run to end, as the queue shows it. */
