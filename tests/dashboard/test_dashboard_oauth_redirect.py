@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from agent.dashboard import auth_routes, routes
+from agent.dashboard.dev_login import GhCredentials
 from agent.dashboard.oauth import COOKIE_NAME, GithubUser, decode_session, sanitize_redirect_to
 from agent.users import User
 
@@ -353,6 +354,61 @@ def test_desktop_login_hands_the_session_back_over_loopback(monkeypatch) -> None
             headers={"origin": "open-swe://app"},
         )
         assert forged.status_code == 400
+
+
+def test_local_desktop_login_signs_in_as_the_gh_user_over_loopback(monkeypatch) -> None:
+    """With no GitHub App, the desktop app signs in through the dev login, which
+    hands its session back as a code, never as a cookie in the courier browser."""
+    _desktop_login_env(monkeypatch)
+    monkeypatch.delenv("GITHUB_APP_CLIENT_ID")
+    monkeypatch.setenv("LANGSMITH_LANGGRAPH_API_VARIANT", "local_dev")
+    user = User()
+    _stub_sign_in(monkeypatch, user)
+
+    async def fake_gh_credentials() -> GhCredentials:
+        return GhCredentials(
+            external_id="42",
+            login="alice",
+            email="alice@example.com",
+            display_name="Alice",
+            avatar_url="",
+            token="gho_test",
+        )
+
+    monkeypatch.setattr(auth_routes, "gh_credentials", fake_gh_credentials)
+    monkeypatch.setattr(auth_routes, "upsert_access_token", AsyncMock())
+    verifier = "desktop-verifier"
+    challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
+    )
+
+    app = FastAPI()
+    app.include_router(routes.router)
+    with TestClient(app, base_url="https://dashboard.example") as client:
+        dev_login = client.get(
+            "/dashboard/api/auth/login",
+            params={"desktop": "true", "desktop_handoff": challenge, "desktop_port": 51234},
+            follow_redirects=False,
+        )
+        assert urlparse(dev_login.headers["location"]).path == "/dashboard/api/auth/dev-login"
+
+        response = client.get(dev_login.headers["location"], follow_redirects=False)
+        location = urlparse(response.headers["location"])
+        assert (location.scheme, location.netloc, location.path) == (
+            "http",
+            "127.0.0.1:51234",
+            "/callback",
+        )
+        assert not response.cookies.get(COOKIE_NAME)
+
+        exchange = client.post(
+            "/dashboard/api/auth/desktop/exchange",
+            json={"code": parse_qs(location.query)["code"][0], "verifier": verifier},
+            headers={"origin": "open-swe://app"},
+        )
+        assert exchange.status_code == 200
+        session = decode_session(exchange.json()["session"])
+        assert (session["sub"], session["user_id"]) == ("alice", str(user.id))
 
 
 def test_desktop_login_rejects_a_malformed_handoff_challenge(monkeypatch) -> None:
