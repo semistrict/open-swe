@@ -63,6 +63,11 @@ export interface ConsoleSignal {
   message: string
 }
 
+export interface VisibilitySignal {
+  at: number
+  state: DocumentVisibilityState
+}
+
 export interface Rect {
   x: number
   y: number
@@ -85,6 +90,12 @@ export interface FlinchBundle {
     interactions: Array<InteractionSignal>
     resources: Array<ResourceSignal>
     console: Array<ConsoleSignal>
+    /**
+     * The page's visibility at the start and at every change. A hidden page
+     * paints nothing and throttles timers, so its DOM changes say little about
+     * what anyone saw. Absent from bundles recorded before it existed.
+     */
+    visibility?: Array<VisibilitySignal>
   }
 }
 
@@ -122,6 +133,7 @@ const signals: FlinchBundle["signals"] = {
   resources: [],
   console: [],
 }
+const visibility: Array<VisibilitySignal> = []
 let started = false
 
 function epoch(startTime: number): number {
@@ -224,6 +236,17 @@ function observePerformance(): void {
   })
 }
 
+function observeVisibility(): void {
+  const note = () => {
+    visibility.push({ at: Date.now(), state: document.visibilityState })
+    // The newest entry before the retained window still says what held then.
+    while ((visibility[1]?.at ?? Infinity) < Date.now() - RETAINED_SIGNAL_MS)
+      visibility.shift()
+  }
+  note()
+  document.addEventListener("visibilitychange", note)
+}
+
 function captureConsole(): void {
   for (const level of ["error", "warn"] as const) {
     const original = console[level].bind(console)
@@ -267,6 +290,7 @@ export function startFlinchRecorder(): void {
     sampling: { mousemove: 50, scroll: 16 },
   })
   observePerformance()
+  observeVisibility()
   captureConsole()
 }
 
@@ -283,7 +307,7 @@ export function flinchBundle(note = ""): FlinchBundle {
     },
     userAgent: navigator.userAgent,
     events: segments.flat(),
-    signals: structuredClone(signals),
+    signals: { ...structuredClone(signals), visibility: [...visibility] },
   }
 }
 

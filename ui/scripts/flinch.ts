@@ -111,7 +111,14 @@ type FindingKind =
 interface Finding {
   kind: FindingKind
   at: number
+  /** When the transient state it describes began, for findings about one. */
+  since?: number
   detail: string
+}
+
+interface Span {
+  start: number
+  end: number
 }
 
 interface Frame {
@@ -214,6 +221,7 @@ class DomTimeline {
           this.findings.push({
             kind: "short-lived element",
             at,
+            since: node.addedAt,
             detail: `${this.describe(node)} was on screen for ${Math.round(at - node.addedAt)}ms`,
           })
         }
@@ -237,6 +245,7 @@ class DomTimeline {
         this.findings.push({
           kind: "remounted element",
           at,
+          since: gone.at,
           detail: `${this.describe(tracked)} was removed and re-added ${Math.round(at - gone.at)}ms later`,
         })
       }
@@ -245,11 +254,18 @@ class DomTimeline {
       const node = this.nodes.get(id)
       if (!node) continue
       node.text = value ?? ""
-      this.flip(this.textHistory, String(id), node.text, at, (previous) => ({
-        kind: "text flip",
+      this.flip(
+        this.textHistory,
+        String(id),
+        node.text,
         at,
-        detail: `text in ${this.describe(this.parent(node) ?? node)} went "${clip(previous)}" → … → back within ${FLIP_MS}ms`,
-      }))
+        ({ previous, since }) => ({
+          kind: "text flip",
+          at,
+          since,
+          detail: `text in ${this.describe(this.parent(node) ?? node)} went "${clip(previous)}" → … → back within ${FLIP_MS}ms`,
+        })
+      )
     }
     for (const { id, attributes } of data.attributes ?? []) {
       const node = this.nodes.get(id)
@@ -263,9 +279,10 @@ class DomTimeline {
           `${id}:${name}`,
           value ?? "",
           at,
-          () => ({
+          ({ since }) => ({
             kind: "attribute flip",
             at,
+            since,
             detail: `${name} on ${this.describe(node)} changed and changed back within ${FLIP_MS}ms`,
           })
         )
@@ -278,13 +295,14 @@ class DomTimeline {
     key: string,
     value: string,
     at: number,
-    finding: (previous: string) => Finding
+    finding: (transient: { previous: string; since: number }) => Finding
   ): void {
     const history = histories.get(key) ?? []
     const recent = history.filter((entry) => at - entry.at <= FLIP_MS)
     const earlier = recent.slice(0, -1).find((entry) => entry.value === value)
-    if (earlier && recent.at(-1)?.value !== value)
-      this.findings.push(finding(earlier.value))
+    const latest = recent.at(-1)
+    if (earlier && latest && latest.value !== value)
+      this.findings.push(finding({ previous: earlier.value, since: latest.at }))
     histories.set(key, [...recent, { value, at }])
   }
 
@@ -410,6 +428,41 @@ class DomTimeline {
     const node = id === null ? undefined : this.nodes.get(id)
     return node ? this.describe(node) : `node ${id ?? "?"}`
   }
+}
+
+/**
+ * Spans in which the browser painted nothing new: long animation frames, during
+ * which the screen held what it showed when the frame began. A DOM state that
+ * came and went inside one was never seen.
+ */
+function unpaintedSpans(bundle: FlinchBundle): Array<Span> {
+  return bundle.signals.longFrames.map((frame) => ({
+    start: frame.at,
+    end: frame.at + frame.duration,
+  }))
+}
+
+/** What the screen showed at `at`: the state as of the last paint. */
+function presentedAt(at: number, unpainted: Array<Span>): number {
+  return unpainted.find((span) => at > span.start && at < span.end)?.start ?? at
+}
+
+function wasPainted(finding: Finding, unpainted: Array<Span>): boolean {
+  const { since } = finding
+  return (
+    since === undefined ||
+    !unpainted.some((span) => since >= span.start && finding.at <= span.end)
+  )
+}
+
+/** Spans in which the page was hidden, and so painted nothing at all. */
+function hiddenSpans(bundle: FlinchBundle, until: number): Array<Span> {
+  const changes = bundle.signals.visibility ?? []
+  return changes.flatMap((change, index) =>
+    change.state === "hidden"
+      ? [{ start: change.at, end: changes[index + 1]?.at ?? until }]
+      : []
+  )
 }
 
 function clip(text: string, length = 60): string {
@@ -701,9 +754,10 @@ async function main(): Promise<void> {
 
   const dom = new DomTimeline()
   dom.replay(events)
-  const findings = [...dom.findings, ...signalFindings(bundle, dom)].sort(
-    (a, b) => a.at - b.at
-  )
+  const unpainted = unpaintedSpans(bundle)
+  const findings = [...dom.findings, ...signalFindings(bundle, dom)]
+    .filter((finding) => wasPainted(finding, unpainted))
+    .sort((a, b) => a.at - b.at)
 
   // People react a beat after they see something, so the window ends at the flinch,
   // or just after the last thing that changed if the page was idle by then.
@@ -728,7 +782,7 @@ async function main(): Promise<void> {
       const file = join(framesDir, `${String(index).padStart(5, "0")}.png`)
       await renderFrame(
         page,
-        at - first.timestamp,
+        presentedAt(at, unpainted) - first.timestamp,
         `frame ${index}   ${relative(at, bundle.flinchedAt)}`,
         file
       )
@@ -741,6 +795,12 @@ async function main(): Promise<void> {
 
     const inWindow = (finding: Finding) =>
       finding.at >= start - 2000 && finding.at <= bundle.flinchedAt
+    const hidden = hiddenSpans(bundle, end).filter(
+      (span) => span.start < end && span.end > start
+    )
+    const hiddenWarning = hidden.length
+      ? `**Recorded in a hidden tab** (${hidden.map((span) => `${relative(Math.max(span.start, start), bundle.flinchedAt)} to ${relative(Math.min(span.end, end), bundle.flinchedAt)}`).join(", ")}): the browser painted nothing then and throttled timers and animation frames, so the frames show DOM states nobody saw, at distorted times. Re-record in a visible tab before trusting them.\n\n`
+      : ""
     const findingLines = groupFindings(findings.filter(inWindow))
       .map(
         (group) =>
@@ -753,7 +813,7 @@ async function main(): Promise<void> {
             note: bundle.note,
             slow,
             fps,
-            findings: findingLines,
+            findings: hiddenWarning + findingLines,
           })
         : "Skipped."
     writeFileSync(join(out, "video-review.md"), `${review}\n`)
@@ -769,7 +829,7 @@ async function main(): Promise<void> {
 
 ## What changed on screen
 
-${findingLines || "Nothing flagged in the window; look at the frames."}
+${hiddenWarning}${findingLines || "Nothing flagged in the window; look at the frames."}
 
 ## Video review (${values.model})
 

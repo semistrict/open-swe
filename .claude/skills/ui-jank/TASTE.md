@@ -6,13 +6,13 @@ How the Open SWE dashboard should feel. Each rule is the behaviour to build; und
 
 Revisiting something the person already saw renders it immediately from what the client holds, then reconciles in place. Hydration, refetches, and route changes update content where it stands; a placeholder only ever fills space that has never had content.
 
-- **2026-10-03, open.** Opening Concierge again showed `AgentThreadView`'s pulsing "Loading conversation" logo for 86 ms (frames 37-38, flinch `2026-10-03T04-52-55-124Z`) in place of a transcript already loaded once, with the composer gone. `isHydrating` replaces the whole view on every open of a transcript-v2 thread.
+- **2026-10-03, withdrawn.** A recording seemed to show `AgentThreadView`'s pulsing "Loading conversation" logo for 86 ms on opening Concierge again (flinch `2026-10-03T04-52-55-124Z`, frames 37-38). That recording came from a hidden tab, whose throttled timers stretch every wait. Re-recorded on screen, two revisits render straight from the transcript cache, with no placeholder (flinch `2026-10-03T06-02-38-978Z`).
 
 ## A view switches in one step
 
 Navigation keeps the old view whole until the new one can render, then swaps it in a single frame, or shows the new view's frame (header, composer, layout) at once and fills it in. The sidebar's selection and the main pane change together.
 
-- **2026-10-03, open.** Going back to Concierge from New Thread: for ~100 ms the sidebar already selected Concierge while the pane still showed New Thread with its logo removed and its heading still up (frames 169-171, flinch `2026-10-03T04-52-55-124Z`).
+- **2026-10-03, withdrawn.** Replays seemed to show the sidebar selecting Concierge ~70-100 ms before the pane left New Thread (flinches `2026-10-03T04-52-55-124Z` and `2026-10-03T06-02-38-978Z`). The DOM did pass through that state, but inside a single ~100 ms long frame, so it was never painted; the first recording was also from a hidden tab. The analyzer now renders only what was painted, and the switch is one step.
 
 ## Loading states earn their place
 

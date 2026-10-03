@@ -25,10 +25,16 @@ Jank is what makes the dashboard feel lower quality without being a bug: a frame
 
 ## Flinching a flow yourself
 
-The dev server must be running (`mise run dev-ui`; the replay loads images and fonts from it). In the browser pane, open `http://localhost:2024`, perform the interaction, then within a few seconds call:
+The dev server must be running (`mise run dev-ui`; the replay loads images and fonts from it). Drive a tab that is on screen: a hidden tab paints nothing and throttles its timers, so what it records is not what anyone sees, and the report says so at the top. `agent-browser --headed` opens a visible one; sign it in through the local dev login first:
 
-```js
-await window.__openSweFlinch.flinch("what you just did")
+```bash
+agent-browser --headed open http://localhost:2024/dashboard/api/auth/dev-login
+```
+
+Perform the interaction (`agent-browser open`, `click`, or `eval`), then within a few seconds:
+
+```bash
+agent-browser eval '(async () => await window.__openSweFlinch.flinch("what you just did"))()'
 ```
 
 It returns the saved path. Run `mise run flinch` (add `-- --before 6000` to widen the window, `--fps 60` for finer frames), then read the outputs next to the file:
@@ -37,6 +43,4 @@ It returns the saved path. Run `mise run flinch` (add `-- --before 6000` to wide
 - `sheets/`: 12 consecutive labeled frames per image. View the sheets around every frame a finding or the review names: they are what you see, and the final word.
 - `video-review.md`: a video model's frame-numbered account of the slow-motion replay. It catches teardown-order and visual glitches the DOM analysis has no rule for.
 
-The three sources disagree in useful ways. The DOM report is exact but only knows its rules; the video review sees anything but sometimes over-reports; the frames settle both. A broken image or missing font in every frame, including stable ones, is a replay artifact (the dev server was down during analysis), not jank. Canvas content is not replayed, and the TanStack devtools are excluded from recordings. Frames pin CSS animations at their end and skip transitions, so they show where motion lands, not the motion.
-
-A hidden browser pane throttles timers and `requestAnimationFrame` to about once a second, so anything scheduled on them (scroll-to-bottom, polling) lags by up to a second. In a flinch from a hidden pane, a ~1 s delay beside a ~1000 ms **long frame** is that throttling, not jank.
+The three sources disagree in useful ways. The DOM report is exact but only knows its rules; the video review sees anything but sometimes over-reports; the frames settle both. A broken image or missing font in every frame, including stable ones, is a replay artifact (the dev server was down during analysis), not jank. Canvas content is not replayed, and the TanStack devtools are excluded from recordings. Frames pin CSS animations at their end and skip transitions, so they show where motion lands, not the motion. The DOM changes far more often than the screen does: inside a **long frame** nothing is painted, so frames there show what the screen held when it began, and DOM states that came and went inside one are dropped from the report. Clicks the replay emulates carry a hover state, which a scripted `element.click()` never had.
