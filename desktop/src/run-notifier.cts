@@ -41,21 +41,27 @@ const ENDED_STATUSES: Record<string, RunOutcome> = {
 
 /**
  * Remembers each thread's last status and reports the runs that ended since.
- * A thread seen for the first time only sets the baseline: a run that ended
- * before the watcher started is not news.
+ * The threads of the first observation only set the baseline: a run that
+ * ended before the watcher started is not news. A thread that appears later
+ * is new since then, so if its run already ended, that ending is news.
  */
 class RunWatcher {
   private readonly seen = new Map<
     string,
     { status: string; lastEndedAt: number | null }
   >();
+  private startedAt: number | null = null;
 
-  observe(threads: Iterable<WatchedThread>): Array<EndedRun> {
+  observe(threads: Iterable<WatchedThread>, now: number): Array<EndedRun> {
+    const baseline = this.startedAt === null;
+    this.startedAt ??= now;
     const ended: Array<EndedRun> = [];
     for (const thread of threads) {
       const key = `${thread.location}:${thread.id}`;
-      const previous = this.seen.get(key);
       const lastEndedAt = thread.lastEndedAt ?? null;
+      const previous =
+        this.seen.get(key) ??
+        (baseline ? null : { status: "new", lastEndedAt: this.startedAt });
       this.seen.set(key, { status: thread.status, lastEndedAt });
       const outcome = ENDED_STATUSES[thread.status];
       if (!previous || !outcome || thread.repliesInSlack) continue;
@@ -106,6 +112,7 @@ interface RunNotifierDeps {
   /** Whether the thread is what the user is looking at, which needs no notice. */
   isShowing: (run: EndedRun) => boolean;
   notify: (run: EndedRun) => void;
+  now: () => number;
   setTimer: (callback: () => void, ms: number) => unknown;
   clearTimer: (timer: unknown) => void;
 }
@@ -137,7 +144,10 @@ function createRunNotifier(deps: RunNotifierDeps) {
         return null;
       }),
     ]);
-    const ended = watcher.observe([...(cloud ?? []), ...(local ?? [])]);
+    const ended = watcher.observe(
+      [...(cloud ?? []), ...(local ?? [])],
+      deps.now(),
+    );
     for (const run of ended) {
       if (!deps.isShowing(run)) deps.notify(run);
     }

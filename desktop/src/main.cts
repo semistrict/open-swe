@@ -1884,6 +1884,7 @@ if (!hasSingleInstanceLock) {
       listLocalThreads: listLocalThreadsForNotifications,
       isShowing: isShowingThread,
       notify: notifyRunEnded,
+      now: Date.now,
       setTimer: (callback, ms) => setTimeout(callback, ms),
       clearTimer: (timer) => clearTimeout(timer),
     });

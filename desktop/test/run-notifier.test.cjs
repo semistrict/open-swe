@@ -18,6 +18,7 @@ function scripted(rounds, { showing = () => false } = {}) {
     listLocalThreads: async () => rounds[round]?.local ?? [],
     isShowing: showing,
     notify: (run) => notified.push(`${run.location}:${run.id}:${run.outcome}`),
+    now: () => (round + 1) * 10_000,
     setTimer: (callback, ms) => {
       delays.push(ms);
       pending = callback;
@@ -132,4 +133,21 @@ test("a run that starts and ends between two polls still notifies", async () => 
   run.stop();
 
   assert.deepEqual(run.notified, ["cloud:quick:finished"]);
+});
+
+test("a thread that appears already finished notifies, unless it ended before the watcher started", async () => {
+  const run = scripted([
+    { cloud: [] },
+    {
+      cloud: [
+        cloud("fresh", "finished", { lastEndedAt: 15_000 }),
+        cloud("resurfaced", "finished", { lastEndedAt: 5_000 }),
+      ],
+    },
+  ]);
+  await run.start();
+  await run.next();
+  run.stop();
+
+  assert.deepEqual(run.notified, ["cloud:fresh:finished"]);
 });
