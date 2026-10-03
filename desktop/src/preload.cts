@@ -13,6 +13,20 @@ function isDesktopCommandId(value) {
 
 contextBridge.exposeInMainWorld("openSweDesktop", {
   isDesktop: true,
+  // The main process notifies when runs end, window or not; the page leaves it.
+  runNotifications: true,
+  onOpenThread: (callback) => {
+    const listener = (_event, target) => {
+      if (
+        (target?.location === "cloud" || target?.location === "local") &&
+        typeof target.threadId === "string" &&
+        target.threadId
+      )
+        callback({ location: target.location, threadId: target.threadId });
+    };
+    ipcRenderer.on("desktop:open-thread", listener);
+    return () => ipcRenderer.removeListener("desktop:open-thread", listener);
+  },
   onCommand: (callback) => {
     const listener = (_event, commandId) => {
       if (isDesktopCommandId(commandId)) callback(commandId);

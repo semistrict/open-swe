@@ -19,7 +19,8 @@ export function useRunCompletionNotifier(
   const prevStatusRef = useRef<Map<string, string>>(new Map())
 
   useEffect(() => {
-    if (!threads) return
+    // The desktop app's main process notifies, even with no window open.
+    if (!threads || window.openSweDesktop?.runNotifications) return
     const isViewingThread =
       !!activeThreadId && document.visibilityState === "visible"
     const prev = prevStatusRef.current

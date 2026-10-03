@@ -166,6 +166,15 @@ declare global {
     __OPEN_SWE_BUNDLE__?: { commit: string | null; built_at: string }
     openSweDesktop?: {
       isDesktop: true
+      /** Set by builds whose main process notifies when runs end; the page then leaves it. */
+      runNotifications?: true
+      /** A notification was clicked: show this thread. Absent before main-process notifications. */
+      onOpenThread?: (
+        callback: (target: {
+          location: "cloud" | "local"
+          threadId: string
+        }) => void
+      ) => () => void
       writeClipboard: (value: string) => Promise<void>
       onCommand: (callback: (commandId: DesktopCommandId) => void) => () => void
       listProjects: () => Promise<Array<DesktopProject>>

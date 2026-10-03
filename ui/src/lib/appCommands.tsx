@@ -230,6 +230,19 @@ export function AppCommandProvider({
     })
   }, [])
 
+  useEffect(() => {
+    const desktop = window.openSweDesktop
+    if (!desktop?.onOpenThread) return
+    return desktop.onOpenThread(({ location, threadId }) => {
+      void (location === "local"
+        ? navigate({
+            to: "/agents/local/$sessionId",
+            params: { sessionId: threadId },
+          })
+        : navigate({ to: "/agents/$threadId", params: { threadId } }))
+    })
+  }, [navigate])
+
   const context = useMemo<AppCommandsContextValue>(
     () => ({ commands, openPalette, openShortcutReference, register }),
     [commands, openPalette, openShortcutReference, register]
