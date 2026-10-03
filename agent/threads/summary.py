@@ -21,6 +21,7 @@ from agent.slack.client import parse_github_pr_url
 from agent.slack.code_channels import CODE_CHANNEL_SESSION_TS
 from agent.slack.oauth import SLACK_TEAM_ID
 from agent.source_context import SourceContext
+from agent.transcript.status import running_transcript_threads
 from agent.utils.json_types import (
     JsonObject,
     ThreadLike,
@@ -382,7 +383,14 @@ async def _thread_summary(
     *,
     latest_run_status: str | None = None,
     latest_run_id: str | None = None,
+    transcript_running: bool | None = None,
 ) -> dict[str, Any]:
+    """The dashboard's view of one thread.
+
+    ``transcript_running`` is whether the thread's transcript has an open turn,
+    for callers that read it for many threads at once; it is read here when
+    omitted.
+    """
     metadata = thread_metadata(thread)
     owner, name, full_name = _metadata_repo(metadata)
     created_at = metadata.get("created_at_ms")
@@ -403,6 +411,18 @@ async def _thread_summary(
         metadata_run_status if isinstance(metadata_run_status, str) else None
     )
     status = run_status_to_agent_status(thread_status, run_status)
+    thread_id = thread.get("thread_id") or thread.get("id")
+    # The transcript runs from the moment the message is accepted, before
+    # LangGraph's queued run starts.
+    if (
+        status != "running"
+        and metadata.get("transcript") == TRANSCRIPT_VERSION
+        and isinstance(thread_id, str)
+    ):
+        if transcript_running is None:
+            transcript_running = thread_id in await running_transcript_threads([thread_id])
+        if transcript_running:
+            status = "running"
 
     pr_number = metadata.get("pr_number")
     pr_url = metadata.get("pr_url")
@@ -410,7 +430,6 @@ async def _thread_summary(
     pr_state = metadata.get("pr_state")
     thread_category, origin, trigger_kind = _thread_classification(metadata)
 
-    thread_id = thread.get("thread_id") or thread.get("id")
     trace_url = await get_langsmith_trace_url(thread_id) if isinstance(thread_id, str) else None
 
     raw_sandbox_id = metadata.get("sandbox_id")

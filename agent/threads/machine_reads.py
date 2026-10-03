@@ -13,6 +13,7 @@ from fastapi import HTTPException
 
 from agent.threads.principals import STARTED_BY_ID, Principal
 from agent.threads.summary import run_status_to_agent_status
+from agent.transcript.status import running_transcript_threads
 from agent.utils.dashboard_links import dashboard_thread_url
 from agent.utils.json_types import JsonObject, thread_metadata
 from agent.utils.thread_ops import langgraph_client
@@ -22,13 +23,18 @@ logger = logging.getLogger(__name__)
 MAX_MACHINE_PAGE = 100
 
 
-def _view(thread: Any, thread_id: str, metadata: JsonObject) -> JsonObject:
+def _view(
+    thread: Any, thread_id: str, metadata: JsonObject, *, transcript_running: bool
+) -> JsonObject:
     status = thread.get("status") if isinstance(thread, dict) else None
     stored = metadata.get("latest_run_status")
     title = metadata.get("title")
     return {
         "thread_id": thread_id,
-        "status": run_status_to_agent_status(
+        # A started thread is running before LangGraph's queued run starts.
+        "status": "running"
+        if transcript_running
+        else run_status_to_agent_status(
             status if isinstance(status, str) else None,
             stored if isinstance(stored, str) else None,
         ),
@@ -48,7 +54,8 @@ async def machine_thread(thread_id: str, principal: Principal) -> JsonObject:
         raise HTTPException(404, "thread not found") from exc
     metadata = thread_metadata(thread)
     principal.assert_can_read(metadata)
-    return _view(thread, thread_id, metadata)
+    running = await running_transcript_threads([thread_id])
+    return _view(thread, thread_id, metadata, transcript_running=thread_id in running)
 
 
 async def machine_threads(principal: Principal, *, limit: int = 25) -> list[JsonObject]:
@@ -57,10 +64,18 @@ async def machine_threads(principal: Principal, *, limit: int = 25) -> list[Json
         metadata={STARTED_BY_ID: principal.started_by_id},
         limit=min(max(limit, 1), MAX_MACHINE_PAGE),
     )
-    views: list[JsonObject] = []
-    for thread in threads:
-        metadata = thread_metadata(thread)
-        thread_id = thread.get("thread_id") if isinstance(thread, dict) else None
-        if isinstance(thread_id, str):
-            views.append(_view(thread, thread_id, metadata))
-    return views
+    identified = [
+        (thread, thread_id)
+        for thread in threads
+        if isinstance(thread, dict) and isinstance(thread_id := thread.get("thread_id"), str)
+    ]
+    running = await running_transcript_threads([thread_id for _, thread_id in identified])
+    return [
+        _view(
+            thread,
+            thread_id,
+            thread_metadata(thread),
+            transcript_running=thread_id in running,
+        )
+        for thread, thread_id in identified
+    ]

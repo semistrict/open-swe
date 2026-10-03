@@ -7,6 +7,7 @@ ending settles on — only exist against a real schema.
 
 from uuid import UUID, uuid7
 
+from agent.threads.summary import _thread_summary
 from agent.transcript.engine import Command, append
 from agent.transcript.events import (
     MessageSender,
@@ -157,6 +158,24 @@ async def test_ending_one_of_two_open_turns_keeps_the_thread_running(registry_db
     snapshot = await load_snapshot(thread_id)
     assert snapshot is not None
     assert snapshot.thread.status == "idle"
+
+
+async def test_a_summary_reports_running_from_the_accepted_message(registry_db: None) -> None:
+    thread_id = str(uuid7())
+    turn_id = uuid7()
+    # What LangGraph says between the accepted message and its queued run starting.
+    langgraph_thread = {
+        "thread_id": thread_id,
+        "status": "idle",
+        "metadata": {"transcript": "v2", "latest_run_status": "success"},
+    }
+    await _create(thread_id)
+    await _request_turn(thread_id, turn_id)
+
+    assert (await _thread_summary(langgraph_thread))["status"] == "running"
+
+    await _end_turn(thread_id, turn_id, tag="completed")
+    assert (await _thread_summary(langgraph_thread))["status"] == "finished"
 
 
 async def test_a_late_completion_of_an_interrupted_turn_leaves_the_thread_alone(
