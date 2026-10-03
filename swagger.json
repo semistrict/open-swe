@@ -8363,7 +8363,7 @@
     },
     "/dashboard/api/auth/dev-login": {
       "get": {
-        "description": "Sign in locally as the `gh` CLI's user, with no GitHub App involved.\n\nRefused outside `langgraph dev`, and still subject to the login allowlist.",
+        "description": "Sign in locally as the `gh` CLI's user, with no GitHub App involved.\n\nRefused outside `langgraph dev`, and still subject to the login allowlist.\nThe desktop app signs in through the user's browser, so for it this hands\nback a code to redeem, as the GitHub callback does, instead of a cookie.",
         "operationId": "auth_dev_login_dashboard_api_auth_dev_login_get",
         "parameters": [
           {
@@ -8380,6 +8380,40 @@
                 }
               ],
               "title": "Redirect To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "desktop_handoff",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Desktop Handoff"
+            }
+          },
+          {
+            "in": "query",
+            "name": "desktop_port",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 65535,
+                  "minimum": 1024,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Desktop Port"
             }
           }
         ],

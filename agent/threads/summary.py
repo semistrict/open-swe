@@ -21,7 +21,7 @@ from agent.slack.client import parse_github_pr_url
 from agent.slack.code_channels import CODE_CHANNEL_SESSION_TS
 from agent.slack.oauth import SLACK_TEAM_ID
 from agent.source_context import SourceContext
-from agent.transcript.status import running_transcript_threads
+from agent.transcript.status import TranscriptActivity, transcript_activity
 from agent.utils.json_types import (
     JsonObject,
     ThreadLike,
@@ -383,11 +383,11 @@ async def _thread_summary(
     *,
     latest_run_status: str | None = None,
     latest_run_id: str | None = None,
-    transcript_running: bool | None = None,
+    transcripts: Mapping[str, TranscriptActivity] | None = None,
 ) -> dict[str, Any]:
     """The dashboard's view of one thread.
 
-    ``transcript_running`` is whether the thread's transcript has an open turn,
+    ``transcripts`` is the transcript activity of the threads being summarized,
     for callers that read it for many threads at once; it is read here when
     omitted.
     """
@@ -412,17 +412,15 @@ async def _thread_summary(
     )
     status = run_status_to_agent_status(thread_status, run_status)
     thread_id = thread.get("thread_id") or thread.get("id")
+    activity: TranscriptActivity | None = None
+    if metadata.get("transcript") == TRANSCRIPT_VERSION and isinstance(thread_id, str):
+        if transcripts is None:
+            transcripts = await transcript_activity([thread_id])
+        activity = transcripts.get(thread_id)
     # The transcript runs from the moment the message is accepted, before
     # LangGraph's queued run starts.
-    if (
-        status != "running"
-        and metadata.get("transcript") == TRANSCRIPT_VERSION
-        and isinstance(thread_id, str)
-    ):
-        if transcript_running is None:
-            transcript_running = thread_id in await running_transcript_threads([thread_id])
-        if transcript_running:
-            status = "running"
+    if activity is not None and activity.running:
+        status = "running"
 
     pr_number = metadata.get("pr_number")
     pr_url = metadata.get("pr_url")
@@ -490,6 +488,13 @@ async def _thread_summary(
         ),
         "createdAt": int(created_at) if isinstance(created_at, (int, float)) else _now_ms(),
         "updatedAt": int(updated_at) if isinstance(updated_at, (int, float)) else _now_ms(),
+        # When the newest turn ended: a watcher that never caught the run in
+        # progress still sees it finish when this moves.
+        "lastTurnEndedAt": (
+            int(activity.last_turn_ended_at.timestamp() * 1000)
+            if activity is not None and activity.last_turn_ended_at is not None
+            else None
+        ),
         "traceUrl": trace_url,
         "sourceUrl": thread_source_url(metadata),
         "sourceAppUrl": thread_source_app_url(metadata),

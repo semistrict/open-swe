@@ -13,7 +13,7 @@ from fastapi import HTTPException
 
 from agent.threads.principals import STARTED_BY_ID, Principal
 from agent.threads.summary import run_status_to_agent_status
-from agent.transcript.status import running_transcript_threads
+from agent.transcript.status import transcript_activity
 from agent.utils.dashboard_links import dashboard_thread_url
 from agent.utils.json_types import JsonObject, thread_metadata
 from agent.utils.thread_ops import langgraph_client
@@ -54,8 +54,10 @@ async def machine_thread(thread_id: str, principal: Principal) -> JsonObject:
         raise HTTPException(404, "thread not found") from exc
     metadata = thread_metadata(thread)
     principal.assert_can_read(metadata)
-    running = await running_transcript_threads([thread_id])
-    return _view(thread, thread_id, metadata, transcript_running=thread_id in running)
+    activity = (await transcript_activity([thread_id])).get(thread_id)
+    return _view(
+        thread, thread_id, metadata, transcript_running=activity is not None and activity.running
+    )
 
 
 async def machine_threads(principal: Principal, *, limit: int = 25) -> list[JsonObject]:
@@ -69,13 +71,15 @@ async def machine_threads(principal: Principal, *, limit: int = 25) -> list[Json
         for thread in threads
         if isinstance(thread, dict) and isinstance(thread_id := thread.get("thread_id"), str)
     ]
-    running = await running_transcript_threads([thread_id for _, thread_id in identified])
+    transcripts = await transcript_activity([thread_id for _, thread_id in identified])
     return [
         _view(
             thread,
             thread_id,
             thread_metadata(thread),
-            transcript_running=thread_id in running,
+            transcript_running=(
+                (activity := transcripts.get(thread_id)) is not None and activity.running
+            ),
         )
         for thread, thread_id in identified
     ]

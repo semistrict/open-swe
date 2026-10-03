@@ -226,10 +226,14 @@ async def test_a_summary_reports_running_from_the_accepted_message(registry_db: 
     await _create(thread_id)
     await _request_turn(thread_id, turn_id)
 
-    assert (await _thread_summary(langgraph_thread))["status"] == "running"
+    running = await _thread_summary(langgraph_thread)
+    assert (running["status"], running["lastTurnEndedAt"]) == ("running", None)
 
     await _end_turn(thread_id, turn_id, tag="completed")
-    assert (await _thread_summary(langgraph_thread))["status"] == "finished"
+    finished = await _thread_summary(langgraph_thread)
+    assert finished["status"] == "finished"
+    # What lets a watcher that never caught the run in progress see it end.
+    assert isinstance(finished["lastTurnEndedAt"], int)
 
 
 async def test_a_late_completion_of_an_interrupted_turn_leaves_the_thread_alone(
