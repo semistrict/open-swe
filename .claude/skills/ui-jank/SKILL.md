@@ -19,9 +19,10 @@ Jank is what makes the dashboard feel lower quality without being a bug: a frame
 
 1. `mise run flinch` analyzes the newest file in `logs/flinches/`; pass a path for another.
 2. Find the moment: read `report.md`, `video-review.md`, and the contact sheets around each frame they name. Done when you can point to the exact frames and the element that changed in them.
-3. Find the cause in the code and fix it.
-4. Flinch the same flow yourself until it comes back clean.
-5. Record the lesson in [TASTE.md](TASTE.md): extend the rule it violated with this instance, or add a rule if none covers it. Done when the entry names the flow, the frames' evidence, the cause, and the fix.
+3. Confirm it was painted (below). Done when the glitch reproduces in a visible tab and survives the paint check, or is withdrawn as an artifact.
+4. Find the cause in the code and fix it (below for where to look).
+5. Flinch the same flow yourself until it comes back clean.
+6. Record the lesson in [TASTE.md](TASTE.md): extend the rule it violated with this instance, or add a rule if none covers it. Done when the entry names the flow, the frames' evidence, the cause, and the fix. A glitch that turns out to be an artifact is withdrawn there with the reason, and what fooled you goes into this skill, so the next reader is not fooled the same way.
 
 ## Flinching a flow yourself
 
@@ -43,4 +44,30 @@ It returns the saved path. Run `mise run flinch` (add `-- --before 6000` to wide
 - `sheets/`: 12 consecutive labeled frames per image. View the sheets around every frame a finding or the review names: they are what you see, and the final word.
 - `video-review.md`: a video model's frame-numbered account of the slow-motion replay. It catches teardown-order and visual glitches the DOM analysis has no rule for.
 
-The three sources disagree in useful ways. The DOM report is exact but only knows its rules; the video review sees anything but sometimes over-reports; the frames settle both. A broken image or missing font in every frame, including stable ones, is a replay artifact (the dev server was down during analysis), not jank. Canvas content is not replayed, and the TanStack devtools are excluded from recordings. Frames pin CSS animations at their end and skip transitions, so they show where motion lands, not the motion. The DOM changes far more often than the screen does: inside a **long frame** nothing is painted, so frames there show what the screen held when it began, and DOM states that came and went inside one are dropped from the report. Clicks the replay emulates carry a hover state, which a scripted `element.click()` never had.
+The three sources disagree in useful ways. The DOM report is exact but only knows its rules; the video review sees anything but both over-reports and misses things, so check every claim it makes against the frames, and check the frames it was silent about; the frames settle both. A broken image or missing font in every frame, including stable ones, is a replay artifact (the dev server was down during analysis), not jank. Canvas content is not replayed, and the TanStack devtools are excluded from recordings. Frames pin CSS animations at their end and skip transitions, so they show where motion lands, not the motion. The DOM changes far more often than the screen does: inside a **long frame** nothing is painted, so frames there show what the screen held when it began, and DOM states that came and went inside one are dropped from the report. Clicks the replay emulates carry a hover state, which a scripted `element.click()` never had.
+
+## Confirming it was painted
+
+A recording holds every state the DOM passed through, and a replay can show any of them, including ones the screen never displayed. Before fixing anything, prove the person could have seen it:
+
+- **Was the tab visible?** A report from a hidden tab says so at the top. Re-record in a visible tab; on 2026-10-03, both "Concierge glitches" disappeared that way.
+- **Was it painted?** Sample the state at each real frame, in a visible tab, across the interaction. A state that appears in no sample was never on screen:
+
+```js
+const frames = []; let on = true
+const tick = () => { frames.push({ t: performance.now(), state: /* what the glitch is about */ }); if (on) requestAnimationFrame(tick) }
+requestAnimationFrame(tick)
+// …perform the interaction, wait, then: on = false
+```
+
+## Where causes have been
+
+The causes so far were not in the component that looked wrong, but in two sources of truth landing in different ticks or shapes:
+
+- A cache write and component state set together, delivered to the screen separately (TanStack Query's notification scheduling).
+- A router transition rendering the pane while store subscribers, like the sidebar, update at once.
+- A poll fired at the moment of an optimistic change, racing the request that makes it true.
+- An optimistic row shaped differently from the server's echo, or an indicator inserted above content and removed later.
+- Work scheduled with `requestAnimationFrame` from a `ResizeObserver` callback, which lands a frame late.
+
+[TASTE.md](TASTE.md) has each instance with its fix.
