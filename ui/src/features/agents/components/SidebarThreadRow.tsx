@@ -440,14 +440,19 @@ export function SidebarThreadRow({
             {item.pr && <PullRequestIcon state={item.pr.state} live={live} />}
           </>
         )}
-        {item.status === "running" ? (
-          <RunningIndicator label="Thread running" />
-        ) : unread ? (
-          <span
-            className="size-2 rounded-full bg-primary"
-            aria-label="Unread thread"
-          />
-        ) : null}
+        {/* One slot for both, so a finished run's dot lands where its spinner was. */}
+        {(item.status === "running" || unread) && (
+          <span className="flex size-3.5 shrink-0 items-center justify-center">
+            {item.status === "running" ? (
+              <RunningIndicator label="Thread running" />
+            ) : (
+              <span
+                className="size-2 rounded-full bg-primary"
+                aria-label="Unread thread"
+              />
+            )}
+          </span>
+        )}
       </span>
 
       <span className="-mr-[3px] hidden shrink-0 items-center gap-0.5 group-hover/row:flex">
