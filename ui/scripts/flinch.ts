@@ -510,6 +510,13 @@ async function openReplayer(
       skipInactive: false,
       triggerFocus: false,
       showWarning: false,
+      // Paused, rrweb would hold every animation at its first keyframe, so an
+      // entrance (streamed words, a sliding bubble) stays invisible in every
+      // frame. Pin each one at its end instead: frames show where motion lands.
+      pauseAnimation: false,
+      insertStyleRules: [
+        "*, *::before, *::after { animation-delay: -1000s !important; animation-play-state: paused !important; transition: none !important; }",
+      ],
     })
     ;(
       window as unknown as { replayer: InstanceType<typeof Replayer> }

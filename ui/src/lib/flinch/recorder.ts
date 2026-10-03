@@ -8,7 +8,7 @@
  * mirror ids, so `mise run flinch` can find every shifted or slow element in the
  * replay. Bundles are written to logs/flinches/ by the Vite dev server.
  */
-import { record } from "rrweb"
+import { EventType, record } from "rrweb"
 import type { eventWithTime } from "rrweb"
 
 /** One rrweb checkout per segment; two retained segments keep 20-30s of history. */
@@ -254,7 +254,8 @@ export function startFlinchRecorder(): void {
   started = true
   record({
     emit(event, isCheckout) {
-      if (isCheckout) {
+      // A checkout flags both its Meta and its FullSnapshot; the Meta opens the segment.
+      if (isCheckout && event.type === EventType.Meta) {
         segments.push([])
         while (segments.length > RETAINED_SEGMENTS) segments.shift()
       }
