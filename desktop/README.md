@@ -110,7 +110,13 @@ to `desktop/dist/`.
 profile in a real app bundle, signed with whichever Developer ID identity is in your keychain.
 Unlike `electron . --dev`, macOS gives it its own entry under Notifications, so run notifications
 can be tried locally. It shares the development profile's backend and session, takes no updates,
-and leaves out Universal Links, which need LangChain's provisioning profile.
+and leaves out Universal Links, which need LangChain's provisioning profile. electron-builder
+notarizes it when `APPLE_KEYCHAIN_PROFILE` names a `xcrun notarytool store-credentials` profile for
+the same team:
+
+```bash
+APPLE_KEYCHAIN_PROFILE=<profile> pnpm --dir desktop run pack:development
+```
 
 ## macOS releases
 
