@@ -924,6 +924,7 @@ function buildHumanMessage(
         : "user",
     timestamp: row.createdAt,
     chunks,
+    ...(row.senderLogin ? { senderLogin: row.senderLogin } : {}),
     ...(parsed.type === "message"
       ? {
           structuredSenderId: parsed.sender,

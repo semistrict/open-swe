@@ -4,6 +4,7 @@ import { DiffView } from "../../chat/DiffView"
 import { ChunkRenderer } from "../ChunkRenderer"
 import { MessageTimestamp } from "../MessageTimestamp"
 import { ReasoningBlock } from "../ReasoningBlock"
+import { ThinkingSpinner } from "../ThinkingSpinner"
 import {
   buildRenderItems,
   countWorkActions,
@@ -177,7 +178,10 @@ export function AgentTurn({
         .trim(),
     [replyItems]
   )
-  const canFoldWork = !!isStreaming || workItems.length > 0
+  const canFoldWork = workItems.length > 0
+  // A plain reply has nothing to fold: until its text arrives it shows the same
+  // indicator the thread showed before the turn existed, and the text replaces it.
+  const awaitingReply = !!isStreaming && !canFoldWork && replyItems.length === 0
   const [workFoldExpanded, setWorkFoldExpanded] = useState(false)
   const toggleWorkFold = useCallback(
     () => setWorkFoldExpanded((value) => !value),
@@ -292,11 +296,7 @@ export function AgentTurn({
       ? `${foldLabel} · ${actionCount} action${actionCount === 1 ? "" : "s"}`
       : foldLabel
   const visibleItems =
-    canFoldWork && workFoldExpanded
-      ? renderItems
-      : isStreaming || canFoldWork
-        ? collapsedItems
-        : renderItems
+    canFoldWork && !workFoldExpanded ? collapsedItems : renderItems
   const workItemKeys = new Set(workItems.map((item) => item.key))
   const firstWorkIndex = renderItems.findIndex((item) =>
     workItemKeys.has(item.key)
@@ -328,8 +328,10 @@ export function AgentTurn({
         .map((item, index) =>
           renderItem(item, foldIndex + index, visibleItems.length)
         )}
+      <ThinkingSpinner isActive={awaitingReply} label={activityLabel} />
 
-      <div className="mt-1 flex items-center gap-1">
+      {/* Sized for the copy button, which only appears once the turn ends. */}
+      <div className="mt-1 flex min-h-5 items-center gap-1">
         {replyText && !isStreaming && (
           <MessageCopyButton
             className="opacity-0 transition-opacity duration-200 group-hover/turn:opacity-100 focus-visible:opacity-100"

@@ -214,6 +214,8 @@ export interface Message {
   structuredSenderNote?: string
   structuredSenderIsBot?: boolean
   structuredSurface?: string
+  /** Dashboard login of a person who sent this message from the web. */
+  senderLogin?: string
   /** Id of the user message that opened this agent run and keys its diff artifact. */
   turnKey?: string
   /** Timestamp of the first message in an agent turn; used to derive work duration. */

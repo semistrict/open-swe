@@ -424,9 +424,10 @@ export function AgentThreadView({ thread }: AgentThreadViewProps) {
     () =>
       visiblePendingMessages(
         thread.pendingMessages?.filter((message) => !message.queued),
-        [...baseMessages, ...queued.map((entry) => entry.message)]
+        [...baseMessages, ...queued.map((entry) => entry.message)],
+        login
       ),
-    [baseMessages, queued, thread.pendingMessages]
+    [baseMessages, login, queued, thread.pendingMessages]
   )
   const visibleMessages = useMemo(
     () => [...baseMessages, ...pendingMessages],

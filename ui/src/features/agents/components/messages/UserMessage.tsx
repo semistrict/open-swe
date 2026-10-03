@@ -9,6 +9,7 @@ import { SlackMrkdwn } from "./SlackMrkdwn"
 import type { Message } from "@/features/agents/lib/types"
 
 const COLLAPSED_MAX_HEIGHT_PX = 250
+const SENDING_LABEL_DELAY_MS = 300
 
 export function UserMessage({ message }: { message: Message }) {
   const isSystem = message.structuredSenderKind === "system"
@@ -143,36 +144,51 @@ export function UserMessage({ message }: { message: Message }) {
             )}
           </div>
         )}
-        {message.deliveryStatus && (
-          <div
-            className={`mt-1 pr-1 text-right text-[11px] ${
-              message.deliveryStatus === "failed"
-                ? "text-destructive"
-                : "text-muted-foreground"
-            }`}
-          >
-            {message.deliveryStatus !== "failed" ? (
-              "Sending"
-            ) : (
-              <span
-                title={message.deliveryError}
-                data-testid="user-message-delivery-error"
-              >
-                {message.deliveryError
-                  ? `Failed to send · ${message.deliveryError}`
-                  : "Failed to send"}
-              </span>
-            )}
+        {message.deliveryStatus === "failed" ? (
+          <div className="mt-1 pr-1 text-right text-[11px] leading-4 text-destructive">
+            <span
+              title={message.deliveryError}
+              data-testid="user-message-delivery-error"
+            >
+              {message.deliveryError
+                ? `Failed to send · ${message.deliveryError}`
+                : "Failed to send"}
+            </span>
           </div>
-        )}
-        {!message.timestampIsFallback && (!isSystem || expanded) && (
-          <MessageTimestamp
-            timestamp={message.timestamp}
-            align={isSystem ? "left" : "right"}
-            className="mt-1 pr-1"
-          />
+        ) : message.deliveryStatus === "sending" ? (
+          <SendingStatus />
+        ) : (
+          !message.timestampIsFallback &&
+          (!isSystem || expanded) && (
+            <MessageTimestamp
+              timestamp={message.timestamp}
+              align={isSystem ? "left" : "right"}
+              className="mt-1 pr-1"
+            />
+          )
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Holds the timestamp row's height while the message is in flight, and says
+ * "Sending" only once the wait is long enough to notice: a fast echo swaps the
+ * row for the timestamp without anything appearing or moving.
+ */
+function SendingStatus() {
+  const [noticeable, setNoticeable] = useState(false)
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setNoticeable(true),
+      SENDING_LABEL_DELAY_MS
+    )
+    return () => window.clearTimeout(timer)
+  }, [])
+  return (
+    <div className="mt-1 min-h-4 pr-1 text-right text-[11px] leading-4 text-muted-foreground">
+      {noticeable && "Sending"}
     </div>
   )
 }
