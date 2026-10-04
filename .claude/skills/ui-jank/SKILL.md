@@ -70,5 +70,6 @@ The causes so far were not in the component that looked wrong, but in two source
 - An optimistic row shaped differently from the server's echo, or an indicator inserted above content and removed later.
 - Work scheduled with `requestAnimationFrame` from a `ResizeObserver` callback, which lands a frame late.
 - A cached status trusted for a decision after it went stale, such as steering a send into a run that had already ended.
+- One cache entry written by two paths: an optimistic seed overwritten by a background seeding pass (the sidebar copying list summaries into thread details).
 
 [TASTE.md](TASTE.md) has each instance with its fix.

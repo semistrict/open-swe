@@ -6,6 +6,7 @@ How the Open SWE dashboard should feel. Each rule is the behaviour to build; und
 
 Revisiting something the person already saw renders it immediately from what the client holds, then reconciles in place. Hydration, refetches, and route changes update content where it stands; a placeholder only ever fills space that has never had content.
 
+- **2026-10-04, fixed.** Starting a new thread with Enter, the prompt vanished for a frame as the thread page took over from New Thread (rAF sampling: one frame with no message and the hydrating placeholder). The sidebar's `useSeedAgentThreadDetails` copies list summaries into thread details for every row but the open one; on New Thread nothing is open, so after the list refetch it overwrote the optimistic detail carrying the prompt as a pending message. It now leaves details with a pending send alone.
 - **2026-10-03, withdrawn.** A recording seemed to show `AgentThreadView`'s pulsing "Loading conversation" logo for 86 ms on opening Concierge again (flinch `2026-10-03T04-52-55-124Z`, frames 37-38). That recording came from a hidden tab, whose throttled timers stretch every wait. Re-recorded on screen, two revisits render straight from the transcript cache, with no placeholder (flinch `2026-10-03T06-02-38-978Z`).
 
 ## A view switches in one step
