@@ -342,6 +342,44 @@ describe("transcript events", () => {
     expect(stoppedIds(stopped)).toEqual(["ai-2"])
   })
 
+  it("keeps the next turn in the record while its run waits to start", () => {
+    const state = fromSnapshot(
+      snapshot({
+        thread: { status: "running" },
+        turns: [
+          {
+            ...turn("turn-1", "2026-01-01T00:00:00Z", "requested"),
+            run_id: "run-1",
+          },
+          {
+            ...turn("turn-2", "2026-01-01T00:00:05Z", "requested"),
+            run_id: "run-2",
+          },
+        ],
+        messages: [
+          messageRow({
+            message_id: "human-1",
+            turn_id: "turn-1",
+            role: "human",
+            text: "first ask",
+            created_at: "2026-01-01T00:00:00Z",
+          }),
+          messageRow({
+            message_id: "human-2",
+            turn_id: "turn-2",
+            role: "human",
+            text: "second ask",
+            created_at: "2026-01-01T00:00:05Z",
+          }),
+        ],
+      })
+    )
+
+    // A new thread's first message is next in line, not behind anything.
+    expect(toMessages(state).map((message) => message.id)).toEqual(["human-1"])
+    expect(queuedTurns(state).map((entry) => entry.turnId)).toEqual(["turn-2"])
+  })
+
   it("keeps a queued follow-up out of the record until its run starts", () => {
     const requested = applyEvent(fromSnapshot(twoTurnSnapshot()), {
       ...appended(11, {}),

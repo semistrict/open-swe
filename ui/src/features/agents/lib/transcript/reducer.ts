@@ -444,19 +444,22 @@ function settledStatus(
 }
 
 /**
- * Waiting behind the live run. A requested turn is queued once its run exists,
- * and already while another turn is running: the run id only follows the
- * request by a moment, and the row should not change shape in between.
+ * Waiting behind another turn: a requested turn is queued while an earlier one
+ * is still running or waiting to. The turn next in line is not queued even
+ * once its run exists, so a thread's first message, or a follow-up sent while
+ * idle, stays in the record instead of passing through the queue for the
+ * moment before its run starts.
  */
 function isQueuedTurn(
   state: TranscriptState,
   turn: TranscriptTurnState
 ): boolean {
   if (turn.state !== "requested") return false
-  if (turn.runId !== null) return true
-  return Object.values(state.turns).some(
-    (other) => other.turnId !== turn.turnId && other.state === "running"
-  )
+  const position = state.turnOrder.indexOf(turn.turnId)
+  return state.turnOrder.slice(0, position).some((turnId) => {
+    const earlier = state.turns[turnId]
+    return earlier?.state === "running" || earlier?.state === "requested"
+  })
 }
 
 /**
