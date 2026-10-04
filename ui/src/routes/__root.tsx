@@ -110,7 +110,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         {warmupScript && (
-          <script dangerouslySetInnerHTML={{ __html: warmupScript }} />
+          // Built from a function's source, which the server and client
+          // bundles compile differently; only the server's copy ever runs.
+          <script
+            dangerouslySetInnerHTML={{ __html: warmupScript }}
+            suppressHydrationWarning
+          />
         )}
         <HeadContent />
       </head>
