@@ -18,6 +18,7 @@ Navigation keeps the old view whole until the new one can render, then swaps it 
 
 A loading indicator appears only once the wait is long enough to notice (about 300 ms), and once shown it stays long enough to read (about 500 ms). A fast load shows the content and nothing else.
 
+- **2026-10-04, fixed.** Opening a thread from the search palette flashed `AgentThreadView`'s pulsing "Loading conversation" logo for 60-100 ms before the transcript painted (flinch `2026-10-04T03-01-14-462Z`, frames 94-96; confirmed painted by rAF sampling in a visible tab). The placeholder now holds the space and shows the logo only after `useNoticeableWait` (300 ms), the hook `SendingStatus` also uses.
 - **2026-10-03, fixed.** Every sent message showed "Sending" under its bubble for ~50 ms before the transcript echoed it (flinch `2026-10-03T05-28-48-951Z`, −6583 ms). `UserMessage` now holds that row empty and says "Sending" only after 300 ms.
 - **2026-10-03, fixed.** The sidebar's running spinner showed for ~40 ms on send, then stayed off for the whole run (flinch `2026-10-03T05-37-26-540Z`, −5581 ms). Marking the thread running started the list poll at once, racing the send to the server; summaries followed LangGraph, which only turns busy once the queued run starts, so the poll said idle and polling stopped. Summaries of transcript threads now report running while the transcript has an open turn, the open thread mirrors its live transcript status into the cached thread, and a newly started poll waits one interval (flinch `2026-10-03T05-51-10-409Z`: on from send to reply).
 
@@ -33,6 +34,8 @@ Space for content that arrives later is reserved at its final size, so nothing a
 Every click and keystroke changes something visible within 100 ms: the pressed state, the optimistic result, or the selection. An optimistic update that turns out wrong transitions to the real state; the person sees one change, not a change and its reversal.
 
 - **2026-10-03, fixed.** Sending flashed the composer's button Stop → Send → Stop within 20 ms (flinch `2026-10-03T05-28-48-951Z`, −6655 ms). The send set the thread `running` with `setQueryData`, but TanStack Query delivered that on `setTimeout(0)`, after the composer had already cleared its own `submitting` flag, so one render had neither. Cache notifications are now scheduled on a microtask (`ui/src/lib/query.ts`), landing in the same task as the state set beside them.
+
+- **2026-10-04, fixed.** Choosing a thread in the search palette showed the full command list for ~110 ms as the palette closed (flinch `2026-10-04T03-01-14-462Z`, frames 90-93; rAF sampling: query `""` with 27 options painted before the dialog left). The query was cleared when `open` turned false, but the dialog stays painted through its fade-out. It is now cleared in `onOpenChangeComplete`.
 
 ## Focus, selection, and scroll survive updates
 
