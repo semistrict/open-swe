@@ -23,3 +23,33 @@ export function useNoticeableWait(): boolean {
   }, [])
   return noticeable
 }
+
+/** How long a loading indicator, once shown, stays up so it can be read. */
+export const READABLE_MS = 500
+
+/**
+ * Whether to show the indicator for a wait that is `active`: only once it has
+ * run long enough to notice, and then for long enough to read, even if the
+ * wait ends sooner. For a component that outlives the wait, which
+ * `useNoticeableWait` cannot hold on screen after it unmounts.
+ */
+export function useLoadingIndicator(active: boolean): boolean {
+  const [shownAt, setShownAt] = useState<number | null>(null)
+  useEffect(() => {
+    if (active) {
+      if (shownAt !== null) return
+      const timer = window.setTimeout(
+        () => setShownAt(Date.now()),
+        NOTICEABLE_WAIT_MS
+      )
+      return () => window.clearTimeout(timer)
+    }
+    if (shownAt === null) return
+    const timer = window.setTimeout(
+      () => setShownAt(null),
+      Math.max(0, shownAt + READABLE_MS - Date.now())
+    )
+    return () => window.clearTimeout(timer)
+  }, [active, shownAt])
+  return shownAt !== null
+}

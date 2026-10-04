@@ -7,12 +7,13 @@ import { MessageImage } from "./MessageImage"
 import { MessageTimestamp } from "./MessageTimestamp"
 import { SlackMrkdwn } from "./SlackMrkdwn"
 import type { Message } from "@/features/agents/lib/types"
-import { useNoticeableWait } from "@/features/agents/lib/useNoticeableWait"
+import { useLoadingIndicator } from "@/features/agents/lib/useNoticeableWait"
 
 const COLLAPSED_MAX_HEIGHT_PX = 250
 
 export function UserMessage({ message }: { message: Message }) {
   const isSystem = message.structuredSenderKind === "system"
+  const showSending = useLoadingIndicator(message.deliveryStatus === "sending")
   const isSlack = message.structuredSurface === "slack"
   const text = message.chunks
     .filter((c) => c.kind === "text")
@@ -167,8 +168,8 @@ export function UserMessage({ message }: { message: Message }) {
                 : "Failed to send"}
             </span>
           </div>
-        ) : message.deliveryStatus === "sending" ? (
-          <SendingStatus />
+        ) : message.deliveryStatus === "sending" || showSending ? (
+          <SendingStatus visible={showSending} />
         ) : (
           !message.timestampIsFallback &&
           (!isSystem || expanded) && (
@@ -185,15 +186,15 @@ export function UserMessage({ message }: { message: Message }) {
 }
 
 /**
- * Holds the timestamp row's height while the message is in flight, and says
- * "Sending" only once the wait is long enough to notice: a fast echo swaps the
- * row for the timestamp without anything appearing or moving.
+ * Holds the timestamp row's height while the message is in flight. "Sending"
+ * shows only once the wait is long enough to notice, and then stays long
+ * enough to read: a fast echo swaps the row for the timestamp without
+ * anything appearing or moving, and a slower one never flashes the label.
  */
-function SendingStatus() {
-  const noticeable = useNoticeableWait()
+function SendingStatus({ visible }: { visible: boolean }) {
   return (
     <div className="mt-1 min-h-4 pr-1 text-right text-[11px] leading-4 text-muted-foreground">
-      {noticeable && "Sending"}
+      {visible && "Sending"}
     </div>
   )
 }
