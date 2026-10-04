@@ -326,6 +326,22 @@ describe("transcript events", () => {
     expect(requested.status).toBe("running")
   })
 
+  it("marks the turn the person stopped, and only that one", () => {
+    const base = fromSnapshot(twoTurnSnapshot())
+    const stopped = applyEvent(base, {
+      ...appended(11, {}),
+      event_type: "turn.interrupted",
+      payload: { turn_id: "turn-2" },
+    })
+    const stoppedIds = (state: TranscriptState) =>
+      toMessages(state)
+        .filter((message) => message.stopped)
+        .map((message) => message.id)
+
+    expect(stoppedIds(base)).toEqual([])
+    expect(stoppedIds(stopped)).toEqual(["ai-2"])
+  })
+
   it("keeps a queued follow-up out of the record until its run starts", () => {
     const requested = applyEvent(fromSnapshot(twoTurnSnapshot()), {
       ...appended(11, {}),

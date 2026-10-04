@@ -298,9 +298,16 @@ export function AgentTurn({
     }
   }
 
-  const workLabel =
+  const elapsed =
     workDurationMs && workDurationMs >= 1000
-      ? `Worked for ${formatElapsed(workDurationMs)}`
+      ? formatElapsed(workDurationMs)
+      : null
+  const workLabel = message.stopped
+    ? elapsed
+      ? `Stopped after ${elapsed}`
+      : "Stopped"
+    : elapsed
+      ? `Worked for ${elapsed}`
       : "Worked"
   const foldLabel = isStreaming ? (activityLabel ?? "Working…") : workLabel
   const foldLabelWithCount =
@@ -355,6 +362,10 @@ export function AgentTurn({
             timestamp={message.timestamp}
             startedAt={message.startedAt}
           />
+        )}
+        {/* A turn with work says so on its fold row instead. */}
+        {message.stopped && !canFoldWork && (
+          <span className="text-[11px] text-muted-foreground">Stopped</span>
         )}
       </div>
     </div>

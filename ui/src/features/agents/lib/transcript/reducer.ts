@@ -1083,6 +1083,12 @@ function turnMessages(
     append(call.toolCallId, call.startedAt, [toolChunk(state.threadId, call)])
   }
   flush()
+  // A stopped turn says so where it ends, rather than reading as finished.
+  if (turn.state === "interrupted" && namespace.length === 0) {
+    const last = out.at(-1)
+    if (last?.author === "agent")
+      out[out.length - 1] = { ...last, stopped: true }
+  }
 
   if (!perNamespace) {
     perNamespace = new Map()

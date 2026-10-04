@@ -222,6 +222,8 @@ export interface Message {
   turnKey?: string
   /** Timestamp of the first message in an agent turn; used to derive work duration. */
   startedAt?: string
+  /** The person stopped the run before this agent turn finished. */
+  stopped?: boolean
   timestampIsFallback?: boolean
   chunks: Array<Chunk>
   hidden?: boolean
