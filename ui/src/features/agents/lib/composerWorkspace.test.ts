@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import { pickComposerRepo, pickComposerWorkspace } from "./composerWorkspace"
+import {
+  orderByRecentUse,
+  pickComposerRepo,
+  pickComposerWorkspace,
+} from "./composerWorkspace"
 
 const base = {
   override: null,
@@ -88,5 +92,24 @@ describe("pickComposerRepo", () => {
         offered,
       })
     ).toBeNull()
+  })
+})
+
+describe("orderByRecentUse", () => {
+  it("lists repositories with threads first, newest activity first", () => {
+    const offered = [
+      { full_name: "acme/alpha" },
+      { full_name: "acme/beta" },
+      { full_name: "acme/gamma" },
+      { full_name: "acme/delta" },
+    ]
+    const recent = [
+      { repoFullName: "acme/gamma", updatedAt: 10 },
+      { repoFullName: "ACME/Delta", updatedAt: 20 },
+    ]
+
+    expect(
+      orderByRecentUse(offered, recent).map((repo) => repo.full_name)
+    ).toEqual(["acme/delta", "acme/gamma", "acme/alpha", "acme/beta"])
   })
 })

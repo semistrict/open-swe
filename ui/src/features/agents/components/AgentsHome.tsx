@@ -11,6 +11,7 @@ import type {
 import type { AgentThread, ImageChunk } from "@/features/agents/lib/types"
 import type { CreateAgentThreadVariables } from "@/features/agents/lib/queries"
 import {
+  orderByRecentUse,
   pickComposerRepo,
   pickComposerWorkspace,
 } from "@/features/agents/lib/composerWorkspace"
@@ -33,6 +34,7 @@ import {
   optimisticThread,
   seedAgentThreadLists,
   useAgentSkills,
+  useSidebarRepos,
   useWorkspaceOptions,
 } from "@/features/agents/lib/queries"
 import {
@@ -201,7 +203,12 @@ export function AgentsHome({
   const accessibleRepos = reposQuery.data?.repositories
   // Memoized: a fresh array fed straight into the pick below reads as a
   // mutation to the React Compiler and costs the component its optimization.
-  const workspaceRepos = useMemo(() => accessibleRepos ?? [], [accessibleRepos])
+  // The sidebar's repositories, which it already fetched, say which are in use.
+  const recentRepos = useSidebarRepos({}).data
+  const workspaceRepos = useMemo(
+    () => orderByRecentUse(accessibleRepos ?? [], recentRepos ?? []),
+    [accessibleRepos, recentRepos]
+  )
   const repo = pickComposerRepo({
     override: repoOverride,
     userDefault: userDefaultRepo,
