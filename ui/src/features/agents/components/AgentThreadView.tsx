@@ -151,9 +151,12 @@ export function AgentThreadView({ thread }: AgentThreadViewProps) {
   }
   const scrollControlRef = useRef<MessagesScrollControl | null>(null)
   const routed = source.routed
-  const activeModel = models.find(
-    (model) => model.id === activeSelection?.modelId
-  )
+  // The model whose context window the meter measures against: the one picked
+  // for the next message, or under Auto the one the router chose for the live
+  // run, else the one that served the last run.
+  const contextModelId =
+    activeSelection?.modelId ?? routed?.modelId ?? thread.model
+  const contextModel = models.find((model) => model.id === contextModelId)
   const baseMessages = source.messages
   const isStreaming =
     source.kind === "transcript"
@@ -741,7 +744,7 @@ export function AgentThreadView({ thread }: AgentThreadViewProps) {
                 skills={skills.data}
                 contextUsage={{
                   usedTokens,
-                  contextWindow: activeModel?.context_window ?? null,
+                  contextWindow: contextModel?.context_window ?? null,
                 }}
               />
             </AgentComposerDock>
