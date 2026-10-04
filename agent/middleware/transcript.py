@@ -56,6 +56,7 @@ from agent.transcript.events import (
     MessageCompleted,
     MessageSender,
     MessageUsage,
+    NoticeKind,
     RunNotice,
     ThreadCreated,
     ToolCompleted,
@@ -174,7 +175,7 @@ class RunState:
     seen_human_ids: set[str] = field(default_factory=set)
     buffers: dict[str, MessageBuffers] = field(default_factory=dict)
     message_alias: dict[str, str] = field(default_factory=dict)
-    offloading_notice: JsonObject | None = None
+    notices: dict[NoticeKind, JsonObject] = field(default_factory=dict)
     queue: asyncio.Queue[Command] | None = None
     writer: asyncio.Task[None] | None = None
     terminal: bool = False
@@ -783,7 +784,11 @@ class TranscriptMiddleware(OpenSWEMiddleware):
                 # A subagent's own first message is the task prompt, not
                 # something a person said, and its offloading is the parent's.
                 self._record_injected_humans(state, request)
-                self._record_offloading(state, request)
+                self._record_notice(
+                    state,
+                    "conversation_offloading",
+                    request.state.get("conversation_offloading"),
+                )
         except Exception:
             logger.warning("Transcript pre-model bookkeeping failed", exc_info=True)
 
@@ -847,29 +852,23 @@ class TranscriptMiddleware(OpenSWEMiddleware):
                 )
             )
 
-    def _record_offloading(self, state: RunState, request: ModelRequest) -> None:
-        """Persist the offloading hint the summarizer already wrote into state.
+    def _record_notice(self, state: RunState, kind: NoticeKind, value: object) -> None:
+        """Persist a run hint another middleware already mirrored onto state.
 
-        ``ConversationOffloadingMiddleware`` streams its status through
-        ``get_stream_writer`` and mirrors it onto ``state``; reading it here
-        keeps that middleware untouched.
+        Those middlewares stream their hint through ``get_stream_writer``, which
+        only SDK-streamed threads read; recording it from state keeps them
+        untouched. A hint is recorded again only when it changes.
         """
-        status = request.state.get("conversation_offloading")
-        if not isinstance(status, Mapping):
+        if not isinstance(value, Mapping):
             return
-        payload = _json_object(status)
-        if state.offloading_notice == payload:
+        payload = _json_object(value)
+        if state.notices.get(kind) == payload:
             return
-        state.offloading_notice = payload
+        state.notices[kind] = payload
         state.enqueue(
             Command(
                 command_id=str(uuid.uuid7()),
-                event=RunNotice(
-                    type="run.notice",
-                    turn_id=state.turn_id,
-                    kind="conversation_offloading",
-                    data=payload,
-                ),
+                event=RunNotice(type="run.notice", turn_id=state.turn_id, kind=kind, data=payload),
                 actor_kind="agent",
                 run_id=state.run_id,
                 turn_id=state.turn_id,
