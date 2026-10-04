@@ -558,12 +558,16 @@ export function useSeedAgentThreadDetails(
   useEffect(() => {
     for (const thread of threads) {
       if (thread.id === activeThreadId) continue
+      const key = agentThreadKeys.detail(thread.id)
+      // A thread just sent from New Thread carries its prompt as a pending
+      // message until the transcript has it; overwriting that seed with the
+      // list's summary dropped the prompt from the page that was opening it.
+      if (queryClient.getQueryData<AgentThread>(key)?.pendingMessages?.length)
+        continue
       // Seed as already-stale: the detail GET is what marks a thread viewed
       // server-side, so opening a seeded entry must still refetch despite the
       // detail query's `staleTime` (which exists for the optimistic seed).
-      queryClient.setQueryData(agentThreadKeys.detail(thread.id), thread, {
-        updatedAt: 0,
-      })
+      queryClient.setQueryData(key, thread, { updatedAt: 0 })
     }
   }, [activeThreadId, queryClient, threads])
 }
