@@ -434,7 +434,11 @@ export function AgentsSidebar({
     ...alignedLocalItems.filter((item) => localPinnedIds.has(item.id)),
   ]
   const threadItems: Array<SidebarThreadItem> = [
-    ...recentThreads.map(cloudSidebarThread),
+    // Concierge has its own entry at the top; listing it again here showed it
+    // twice, both selected while it was open.
+    ...recentThreads
+      .filter((thread) => thread.id !== conciergeThreadId)
+      .map(cloudSidebarThread),
     ...(repoMode
       ? []
       : alignedLocalItems.filter((item) => !localPinnedIds.has(item.id))),
