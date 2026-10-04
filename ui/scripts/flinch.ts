@@ -42,7 +42,7 @@ const DEFAULT_VIDEO_MODEL = "google/gemini-3.8-flash"
 const TASTE_SPEC = join(
   UI_DIR,
   "..",
-  ".claude",
+  ".agents",
   "skills",
   "ui-jank",
   "TASTE.md"

@@ -234,7 +234,7 @@ mise run flinch -- path/to/flinch.json --before 6000 --fps 60
 
 The replay loads images and fonts from the dashboard's origin, so keep the dev server running while analyzing.
 
-The [`ui-jank`](../.claude/skills/ui-jank/SKILL.md) skill is how agents use this: they read its taste spec, [`TASTE.md`](../.claude/skills/ui-jank/TASTE.md), before changing the UI, flinch the flows they touched before calling a change done, and turn each confirmed flinch into a fix and a lesson in the spec.
+The [`ui-jank`](../.agents/skills/ui-jank/SKILL.md) skill is how agents use this: they read its taste spec, [`TASTE.md`](../.agents/skills/ui-jank/TASTE.md), before changing the UI, flinch the flows they touched before calling a change done, and turn each confirmed flinch into a fix and a lesson in the spec.
 
 ## Profiling thread load and streaming
 
