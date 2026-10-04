@@ -1,6 +1,7 @@
 import Editor from "@monaco-editor/react"
 import { Textarea } from "@/components/ui/textarea"
 import { useIsHydrated } from "@/lib/hydration"
+import { useResolvedTheme } from "@/lib/theme"
 
 interface InstructionsEditorProps {
   value: string
@@ -17,6 +18,7 @@ export function InstructionsEditor({
   placeholder,
 }: InstructionsEditorProps) {
   const mounted = useIsHydrated()
+  const theme = useResolvedTheme()
 
   if (!mounted) {
     return (
@@ -47,7 +49,7 @@ export function InstructionsEditor({
           padding: { top: 12, bottom: 12 },
           renderLineHighlight: "none",
         }}
-        theme="vs-dark"
+        theme={theme === "dark" ? "vs-dark" : "vs"}
       />
     </div>
   )
