@@ -4,6 +4,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query"
+import { toast } from "sonner"
 import { useNavigate } from "@tanstack/react-router"
 import { useEffect, useRef } from "react"
 
@@ -1178,21 +1179,35 @@ export function useRenameAgentThread() {
 export function useResolveAgentThread() {
   const queryClient = useQueryClient()
 
-  return useMutation({
+  const mutation = useMutation({
     mutationKey: agentMutationKeys.resolve,
     mutationFn: (vars: { threadId: string; resolved: boolean }) =>
       agentsApi.resolveThread(vars.threadId, vars.resolved),
     meta: { errorTitle: "Couldn't archive or restore thread" },
-    onMutate: (vars) =>
-      beginAgentThreadUpdate(queryClient, vars.threadId, () =>
+    onMutate: (vars) => {
+      // Archiving takes the row out from under the pointer, which lands on the
+      // next row's archive button; Undo makes a slip, or a double click, cheap.
+      if (vars.resolved) {
+        toast("Thread archived", {
+          id: `archived:${vars.threadId}`,
+          action: {
+            label: "Undo",
+            onClick: () =>
+              mutation.mutate({ threadId: vars.threadId, resolved: false }),
+          },
+        })
+      }
+      return beginAgentThreadUpdate(queryClient, vars.threadId, () =>
         setAgentThreadResolved(queryClient, vars.threadId, vars.resolved)
-      ),
+      )
+    },
     onError: (_error, _vars, context) => {
       if (context) restoreAgentThreadQueries(queryClient, context)
     },
     onSuccess: (thread) => storeAgentThread(queryClient, thread),
     onSettled: () => invalidateAgentThreadLists(queryClient),
   })
+  return mutation
 }
 
 export function useInfiniteThreadsPages(
