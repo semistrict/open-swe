@@ -7,9 +7,9 @@ import { MessageImage } from "./MessageImage"
 import { MessageTimestamp } from "./MessageTimestamp"
 import { SlackMrkdwn } from "./SlackMrkdwn"
 import type { Message } from "@/features/agents/lib/types"
+import { useNoticeableWait } from "@/features/agents/lib/useNoticeableWait"
 
 const COLLAPSED_MAX_HEIGHT_PX = 250
-const SENDING_LABEL_DELAY_MS = 300
 
 export function UserMessage({ message }: { message: Message }) {
   const isSystem = message.structuredSenderKind === "system"
@@ -178,14 +178,7 @@ export function UserMessage({ message }: { message: Message }) {
  * row for the timestamp without anything appearing or moving.
  */
 function SendingStatus() {
-  const [noticeable, setNoticeable] = useState(false)
-  useEffect(() => {
-    const timer = window.setTimeout(
-      () => setNoticeable(true),
-      SENDING_LABEL_DELAY_MS
-    )
-    return () => window.clearTimeout(timer)
-  }, [])
+  const noticeable = useNoticeableWait()
   return (
     <div className="mt-1 min-h-4 pr-1 text-right text-[11px] leading-4 text-muted-foreground">
       {noticeable && "Sending"}
