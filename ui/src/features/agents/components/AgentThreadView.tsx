@@ -67,6 +67,7 @@ import { useSession } from "@/lib/session"
 import { useIsMobile } from "@/lib/useIsMobile"
 import { useThreadSource } from "@/features/agents/lib/threadSource/ThreadSourceProvider"
 import { useConnectionStatus } from "@/features/agents/lib/stream/useReconnectStatus"
+import { useNoticeableWait } from "@/features/agents/lib/useNoticeableWait"
 import { runTranscriptCommitted } from "@/lib/perf/streaming"
 import {
   threadHydrated,
@@ -633,13 +634,7 @@ export function AgentThreadView({ thread }: AgentThreadViewProps) {
               }
             />
           ) : isHydrating ? (
-            <div className="flex flex-1 items-center justify-center px-6">
-              <img
-                src={`${import.meta.env.BASE_URL}logo-mark.png`}
-                alt="Loading conversation"
-                className="size-12 animate-pulse"
-              />
-            </div>
+            <HydratingPlaceholder />
           ) : (
             <PullRequestPreviewProvider
               pullRequests={thread.pullRequests ?? []}
@@ -760,6 +755,22 @@ export function AgentThreadView({ thread }: AgentThreadViewProps) {
         collapsed={panelCollapsed}
         onCollapsedChange={handlePanelCollapsedChange}
       />
+    </div>
+  )
+}
+
+/** The transcript's space while it loads; the logo appears only for a noticeable wait. */
+function HydratingPlaceholder() {
+  const noticeable = useNoticeableWait()
+  return (
+    <div className="flex flex-1 items-center justify-center px-6">
+      {noticeable && (
+        <img
+          src={`${import.meta.env.BASE_URL}logo-mark.png`}
+          alt="Loading conversation"
+          className="size-12 animate-pulse"
+        />
+      )}
     </div>
   )
 }
