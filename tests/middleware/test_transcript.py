@@ -235,6 +235,7 @@ async def test_an_image_a_tool_returns_is_an_attachment_not_text(
     completed = next(c for c in engine.commands if c.event.type == "tool.completed")
     assert completed.event.output_preview is None
     assert completed.event.has_output is False
+    assert completed.event.attachments is not None
     assert [(a.mime_type, a.attachment_id) for a in completed.event.attachments] == [
         ("image/png", completed.attachments[0].attachment_id)
     ]
