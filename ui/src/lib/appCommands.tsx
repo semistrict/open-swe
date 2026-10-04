@@ -193,23 +193,22 @@ export function AppCommandProvider({
   useEffect(() => {
     if (!enabled || paletteOpen || shortcutReferenceOpen) return
     const onKeyDown = (event: KeyboardEvent) => {
-      if (shouldIgnoreHotkey(event)) return
+      // Text fields are filtered per command below: modifier shortcuts such as
+      // mod+K keep working while the composer has focus, bare keys do not.
+      if (shouldIgnoreHotkey(event, true)) return
       const desktop = Boolean(window.openSweDesktop)
+      const typing = isTypingContext(event.target)
       const command = commandsRef.current.find(
         (candidate) =>
           candidate.run &&
           candidate.shortcuts?.some(
             (shortcut) =>
               !(desktop && candidate.desktopShortcuts?.includes(shortcut)) &&
+              (!typing || isTypingSafeShortcut(shortcut)) &&
               eventMatchesShortcut(event, shortcut)
           )
       )
       if (!command?.run) return
-      if (
-        !command.shortcuts?.some(isTypingSafeShortcut) &&
-        isTypingContext(event.target)
-      )
-        return
       event.preventDefault()
       void command.run()
     }
