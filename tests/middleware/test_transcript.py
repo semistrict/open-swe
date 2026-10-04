@@ -154,6 +154,29 @@ async def test_hook_sequence_for_a_transcribed_turn(monkeypatch: pytest.MonkeyPa
     assert completed.tool_output == "file body"
 
 
+async def test_the_model_auto_routed_to_is_recorded_once_per_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _install(monkeypatch, transcribed=True, turn_id=uuid7())
+    middleware = mw.TranscriptMiddleware()
+    human = HumanMessage(content="do the thing", id="human-1")
+    await middleware.abefore_agent({"messages": [human]}, None)
+    routed = {"route": "fast", "model_id": "openai:gpt-6-luna"}
+
+    async def model_handler(request: ModelRequest) -> ModelResponse:
+        return ModelResponse(result=[AIMessage(content="ok", id=f"ai-{uuid7()}")])
+
+    for _ in range(2):
+        await middleware.awrap_model_call(
+            _model_request([human], {"messages": [human], "routed_model": routed}),
+            model_handler,
+        )
+    await middleware.aafter_agent({"messages": [human]}, None)
+
+    notices = [command.event for command in engine.commands if command.event.type == "run.notice"]
+    assert [(notice.kind, notice.data) for notice in notices] == [("model_routed", routed)]
+
+
 @pytest.mark.parametrize(
     ("recorded", "expected"),
     [

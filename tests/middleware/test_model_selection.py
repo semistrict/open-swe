@@ -226,12 +226,18 @@ async def test_requested_model_wins_and_emits_actual_model(
         "requested_model": "anthropic:claude-opus-5-5",
         "requested_effort": "max",
     }
-    state["model_route"] = (await middleware.abefore_model(state, MagicMock()))["model_route"]
+    update = await middleware.abefore_model(state, MagicMock())
+    state["model_route"] = update["model_route"]
     assert (await _invoke(middleware, dict(state))).model is chosen
     factory.assert_called_with("anthropic:claude-opus-5-5", "max")
     jev.assert_not_awaited()
     assert events[-1] == {
         "type": "model_routed",
+        "route": "default",
+        "model_id": "anthropic:claude-opus-5-5",
+    }
+    # Mirrored for the transcript, whose threads never read the custom stream.
+    assert update.get("routed_model") == {
         "route": "default",
         "model_id": "anthropic:claude-opus-5-5",
     }

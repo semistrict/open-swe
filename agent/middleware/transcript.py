@@ -789,6 +789,7 @@ class TranscriptMiddleware(OpenSWEMiddleware):
                     "conversation_offloading",
                     request.state.get("conversation_offloading"),
                 )
+                self._record_notice(state, "model_routed", request.state.get("routed_model"))
         except Exception:
             logger.warning("Transcript pre-model bookkeeping failed", exc_info=True)
 
