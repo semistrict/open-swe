@@ -153,15 +153,18 @@ export function AppCommandPalette({
     typeof window !== "undefined" && Boolean(window.openSweDesktop)
 
   useEffect(() => {
-    if (!open) {
-      // oxlint-disable-next-line react/set-state-in-effect
-      setQuery("")
-      setDebouncedQuery("")
-      return
-    }
+    if (!open) return
     const timer = window.setTimeout(() => setDebouncedQuery(query.trim()), 180)
     return () => window.clearTimeout(timer)
   }, [open, query])
+
+  // Cleared once the close animation ends: the dialog stays painted while it
+  // fades out, and clearing on close showed the full command list in its place.
+  const resetAfterClose = (nextOpen: boolean) => {
+    if (nextOpen) return
+    setQuery("")
+    setDebouncedQuery("")
+  }
 
   const cloudThreads = useInfiniteThreadsPages(
     {
@@ -288,7 +291,11 @@ export function AppCommandPalette({
   const showError = cloudThreads.isError && results.length === 0
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root
+      open={open}
+      onOpenChange={onOpenChange}
+      onOpenChangeComplete={resetAfterClose}
+    >
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/45 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
         <Dialog.Popup
