@@ -1068,7 +1068,13 @@ function turnMessages(
         const message = humanMessage(state.threadId, row, state.entities)
         if (!message) continue
         turnKey = row.messageId
-        out.push(message)
+        // The request records the plain text; the run re-records it with its
+        // sender a moment later, so until then the name is still on its way.
+        const senderPending =
+          (turn.state === "requested" || turn.state === "running") &&
+          row.senderLogin !== null &&
+          !message.structuredSenderName
+        out.push(senderPending ? { ...message, senderPending } : message)
         continue
       }
       const chunks: Array<Chunk> = []

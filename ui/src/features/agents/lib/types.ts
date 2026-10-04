@@ -224,6 +224,8 @@ export interface Message {
   startedAt?: string
   /** The person stopped the run before this agent turn finished. */
   stopped?: boolean
+  /** A web message whose sender's name the transcript has not filled in yet. */
+  senderPending?: boolean
   timestampIsFallback?: boolean
   chunks: Array<Chunk>
   hidden?: boolean

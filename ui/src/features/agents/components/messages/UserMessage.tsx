@@ -65,6 +65,18 @@ export function UserMessage({ message }: { message: Message }) {
               </span>
             )}
           </button>
+        ) : (message.optimistic || message.senderPending) &&
+          !message.structuredSenderName &&
+          !isSlack &&
+          !message.structuredSenderIsBot ? (
+          // A message sent before its sender's name is known (the first one in
+          // a new thread) holds the name's row until the transcript fills it.
+          <div
+            aria-hidden
+            className="invisible mb-1 flex items-center gap-1 px-1 text-[11px] font-medium"
+          >
+            <span>{"\u00a0"}</span>
+          </div>
         ) : (
           (message.structuredSenderName ||
             isSlack ||

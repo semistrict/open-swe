@@ -997,6 +997,7 @@ export function optimisticThread(
     id: vars.client_message_id ?? `optimistic-user-${threadId}`,
     author: "user",
     timestamp: new Date(now).toISOString(),
+    optimistic: true,
     chunks,
   }
   return {
