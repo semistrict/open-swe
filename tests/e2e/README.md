@@ -50,6 +50,8 @@ so what Playwright asserts on is exactly what the real agent produced.
   files carry a real per-file `patch`, so eligibility checks that read the diff
   see what GitHub would return.
 - `langgraph.e2e.json` — dev-server config pointing at the two entrypoints above.
+- `serve.py` — starts that server as `langgraph dev` would, without file
+  persistence, so a run neither inherits nor leaves state.
 - `static/{slack,github}.html` — the mock Slack/GitHub UIs (external SaaS we can't
   run locally). The dashboard is **not** mocked — it's the real `ui/` app.
 - `global-setup.ts` — builds the real `ui/` SPA (once) so the harness can serve it.
@@ -116,6 +118,12 @@ E2E_PERF_RATCHET=1 pnpm exec playwright test tests/perf_budgets.spec.ts
 That rewrites each ceiling to the measurement plus a little headroom (commits
 move by a few with response order; bundle size gets 2%). Raising one is a hand
 edit, so it shows up in review with the change that needed it.
+
+Commit counts grow with what the sidebar lists, so measure against a fresh
+database, as CI does: a Postgres that earlier runs filled reports more work
+than CI would and ratchets nothing. The e2e server itself keeps no state
+between runs (`serve.py` starts it without `langgraph dev`'s file persistence,
+which shares `.langgraph_api/` with `mise run dev` in the repo root).
 
 ## Artifacts (replay a run)
 

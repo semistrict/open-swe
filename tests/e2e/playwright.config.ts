@@ -49,10 +49,9 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     // Real langgraph dev: real agent graph + real webhook routes + the harness
-    // http app (fake GitHub/Slack + mock UIs). Only the LLM is faked.
-    command:
-      "uv run langgraph dev --config tests/e2e/langgraph.e2e.json " +
-      `--port ${PORT} --no-browser --allow-blocking --no-reload`,
+    // http app (fake GitHub/Slack + mock UIs). Only the LLM is faked. Started
+    // through serve.py so it keeps no state between runs (see there).
+    command: `uv run python tests/e2e/serve.py --port ${PORT}`,
     cwd: repoRoot,
     url: `${harnessURL}/mock/github/data`,
     reuseExistingServer: !process.env.CI,
