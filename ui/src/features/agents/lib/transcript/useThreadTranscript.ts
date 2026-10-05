@@ -60,6 +60,43 @@ function cached(threadId: string): TranscriptState | null {
   return cache.get(threadId)?.state ?? null
 }
 
+const inflight = new Map<string, Promise<TranscriptState>>()
+
+/**
+ * The thread's transcript from the cache, or its snapshot fetched into the
+ * cache. Concurrent callers share one request, so a view that mounts while a
+ * prefetch is in flight waits on it instead of asking again.
+ */
+function loadTranscript(threadId: string): Promise<TranscriptState> {
+  const hit = cached(threadId)
+  if (hit) return Promise.resolve(hit)
+  const pending = inflight.get(threadId)
+  if (pending) return pending
+  const request = fetchTranscript(threadId)
+    .then((snapshot) => {
+      // A view that went live meanwhile published newer state; keep it.
+      const current = cache.get(threadId)?.state
+      if (current) return current
+      const state = fromSnapshot(snapshot)
+      cache.set(threadId, { state, touchedAt: Date.now() })
+      return state
+    })
+    .finally(() => inflight.delete(threadId))
+  inflight.set(threadId, request)
+  return request
+}
+
+/**
+ * Start loading a thread's transcript before its view mounts, such as when the
+ * pointer rests on a link to it, so opening it paints from the cache.
+ */
+export function prefetchThreadTranscript(threadId: string): void {
+  loadTranscript(threadId).catch((error: unknown) => {
+    // The view retries on mount and surfaces its own failure.
+    console.warn("Could not prefetch a thread transcript", { threadId, error })
+  })
+}
+
 /** The thread was deleted while this client was reading it. */
 export class ThreadDeletedError extends Error {
   constructor() {
@@ -221,9 +258,9 @@ export function useThreadTranscript(
     const start = async () => {
       try {
         if (!stateRef.current) {
-          const snapshot = await fetchTranscript(threadId)
+          const loaded = await loadTranscript(threadId)
           if (disposed) return
-          publish(fromSnapshot(snapshot))
+          publish(loaded)
         }
         threadHydrated(threadId)
         hydration.resolve()

@@ -3,7 +3,8 @@ import { useSyncExternalStore } from "react"
 const STORAGE_KEY = "open-swe.streaming.use-stream"
 const CHANGE_EVENT = "open-swe-stream-preference"
 
-function readPreference(): boolean {
+/** True when the reader opted into the SDK stream instead of the transcript log. */
+export function prefersStream(): boolean {
   return (
     typeof window !== "undefined" &&
     window.localStorage.getItem(STORAGE_KEY) === "true"
@@ -25,5 +26,5 @@ export function setUseStreamPreference(enabled: boolean): void {
 }
 
 export function useStreamPreference(): boolean {
-  return useSyncExternalStore(subscribe, readPreference, () => false)
+  return useSyncExternalStore(subscribe, prefersStream, () => false)
 }
