@@ -10,6 +10,7 @@ const {
   clipboard,
   ipcMain,
   Menu,
+  Notification,
   dialog,
   nativeTheme,
   net,
@@ -64,6 +65,10 @@ const {
 const { OpenAiOAuthManager } = require("./openai-oauth.cjs");
 const { isDesktopCommandId } = require("./commands.cjs");
 const {
+  createRunNotifier,
+  endedRunNotification,
+} = require("./run-notifier.cjs");
+const {
   APP_ORIGIN,
   APP_URL,
   SESSION_COOKIE_NAME,
@@ -98,6 +103,7 @@ const appRuntime = resolveAppRuntime({
   argv: process.argv,
   isPackaged: app.isPackaged,
   appDataPath: app.getPath("appData"),
+  buildProfile: require("../package.json").openSweBuildProfile,
 });
 const isDevelopment = appRuntime.isDevelopment;
 if (appRuntime.userDataPath) {
@@ -134,7 +140,12 @@ const connectFlows = new Map();
 let quitting = false;
 let localThreadStore = null;
 let lastActivity = {};
+let lastLocalRuns: Record<
+  string,
+  { status: string | null; updatedAt: number | null }
+> = {};
 let backendSupervisor = null;
+let runNotifier = null;
 let openAiOAuth = null;
 type DesktopUpdateState = {
   status: "idle" | "downloading" | "ready" | "installing";
@@ -192,7 +203,7 @@ function failDesktopUpdate(error: unknown) {
 }
 
 function configureAutoUpdater() {
-  if (!app.isPackaged) return;
+  if (!appRuntime.receivesUpdates) return;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.allowPrerelease = false;
@@ -733,14 +744,7 @@ function configureDesktopIpc() {
   });
   ipcMain.handle("desktop:local-activity", async (event) => {
     requireTrustedDesktopIpc(event);
-    const activity = await backendSupervisor.threadActivity();
-    if (!activity) return lastActivity;
-    for (const [threadId, status] of Object.entries(lastActivity)) {
-      if (status === "running" && activity[threadId] !== "running")
-        localThreadStore.update(threadId, { viewed: false });
-    }
-    lastActivity = activity;
-    return activity;
+    return (await refreshLocalActivity()) ?? lastActivity;
   });
   ipcMain.handle("desktop:update-local-thread", async (event, input) => {
     requireTrustedDesktopIpc(event);
@@ -1179,7 +1183,7 @@ function createMenu() {
   };
   const checkForUpdatesItem = {
     label: "Check for Updates…",
-    enabled: app.isPackaged,
+    enabled: appRuntime.receivesUpdates,
     click: () => void checkForDesktopUpdates(),
   };
   const template = [
@@ -1461,6 +1465,115 @@ function handleNavigation(window, event, url) {
   }
 }
 
+/**
+ * The local backend's run activity, marking threads whose run just ended
+ * unread. Shared by the page's poll and the run notifier, so a run that ends is
+ * handled once whichever asks first. Null when the backend cannot be read.
+ */
+async function refreshLocalActivity() {
+  const runs: typeof lastLocalRuns | null =
+    await backendSupervisor.threadRuns();
+  if (!runs) return null;
+  const activity = {};
+  for (const [threadId, run] of Object.entries(runs)) {
+    if (run.status) activity[threadId] = run.status;
+  }
+  for (const [threadId, status] of Object.entries(lastActivity)) {
+    if (status === "running" && activity[threadId] !== "running")
+      localThreadStore.update(threadId, { viewed: false });
+  }
+  lastActivity = activity;
+  lastLocalRuns = runs;
+  return activity;
+}
+
+async function listCloudThreadsForNotifications() {
+  if (!backendUrl) return null;
+  const url = new URL("/dashboard/api/threads/page", backendUrl);
+  url.search = new URLSearchParams({
+    limit: "50",
+    offset: "0",
+    resolved: "false",
+    scope: "interactive",
+    sort_by: "updated_at",
+  }).toString();
+  const response = await backendFetch(url.toString(), {
+    signal: AbortSignal.timeout(10_000),
+  });
+  // Signed out (or not yet signed in): nothing to watch until a session exists.
+  if (response.status === 401) return null;
+  if (!response.ok) throw new Error(`Thread list failed (${response.status})`);
+  const page = await response.json();
+  return (Array.isArray(page?.items) ? page.items : []).map((thread) => ({
+    id: thread.id,
+    location: "cloud",
+    title: thread.title,
+    status: thread.status,
+    lastEndedAt: thread.lastTurnEndedAt ?? null,
+    repliesInSlack: thread.source === "slack",
+  }));
+}
+
+async function listLocalThreadsForNotifications() {
+  if (!localThreadStore.list().length) return [];
+  const activity = await refreshLocalActivity();
+  if (!activity) return null;
+  return localThreadStore.list().map((thread) => {
+    const run = lastLocalRuns[thread.id];
+    return {
+      id: thread.id,
+      location: "local",
+      title: thread.title,
+      status: activity[thread.id] ?? "idle",
+      lastEndedAt: run && run.status !== "running" ? run.updatedAt : null,
+    };
+  });
+}
+
+function threadPath(run) {
+  return run.location === "local"
+    ? `/agents/local/${encodeURIComponent(run.id)}`
+    : `/agents/${encodeURIComponent(run.id)}`;
+}
+
+/** Whether the focused window is showing the thread, which needs no notice. */
+function isShowingThread(run) {
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  if (!mainWindow.isVisible() || !mainWindow.isFocused()) return false;
+  const url = mainWindow.webContents.getURL();
+  return Boolean(url) && new URL(url).pathname === threadPath(run);
+}
+
+/** Bring the window up on the thread, opening one if the app has none. */
+function openThread(run) {
+  const target = { location: run.location, threadId: run.id };
+  const existing = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  const window = existing || createWindow();
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+  if (existing && !existing.webContents.isLoading()) {
+    window.webContents.send("desktop:open-thread", target);
+  } else {
+    window.webContents.once("did-finish-load", () =>
+      window.webContents.send("desktop:open-thread", target),
+    );
+  }
+}
+
+function notifyRunEnded(run) {
+  if (!Notification.isSupported()) return;
+  const notification = new Notification(endedRunNotification(run));
+  notification.on("click", () => openThread(run));
+  notification.on("show", () =>
+    console.info("Showed a run notification", run.location, run.id),
+  );
+  notification.on("failed", (_event, error) =>
+    console.warn("Could not show a run notification", run.id, error),
+  );
+  notification.show();
+}
+
 function createWindow() {
   if (!backendUrl) return createSetupWindow();
   const window = new BrowserWindow({
@@ -1702,7 +1815,7 @@ if (!hasSingleInstanceLock) {
       backendUrl = resolveBackendUrl({
         argv: process.argv.slice(1),
         env: process.env,
-        isPackaged: app.isPackaged,
+        isDevelopment,
         storedUrl: readStoredBackendUrl(),
       });
     } catch (error) {
@@ -1767,6 +1880,16 @@ if (!hasSingleInstanceLock) {
     configureDesktopIpc();
     createMenu();
     createWindow();
+    runNotifier = createRunNotifier({
+      listCloudThreads: listCloudThreadsForNotifications,
+      listLocalThreads: listLocalThreadsForNotifications,
+      isShowing: isShowingThread,
+      notify: notifyRunEnded,
+      now: Date.now,
+      setTimer: (callback, ms) => setTimeout(callback, ms),
+      clearTimer: (timer) => clearTimeout(timer),
+    });
+    runNotifier.start();
     if (pendingDeepLink && openDesktopLink(pendingDeepLink))
       pendingDeepLink = null;
     // Otherwise the first local thread opened after launch waits behind the
@@ -1799,6 +1922,7 @@ if (!hasSingleInstanceLock) {
     if (quitting) return;
     event.preventDefault();
     quitting = true;
+    runNotifier?.stop();
     void Promise.all([
       closeAllTerminals(),
       backendSupervisor?.close(),

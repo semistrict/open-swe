@@ -261,7 +261,7 @@ async def create_dashboard_thread_record(
     email: str | None = None,
     repo_config: dict[str, str],
     repo_explicitly_none: bool = False,
-    prompt: str,
+    prompt: str | None,
     images: list[DashboardImageBody] | None = None,
     title: str | None = None,
     model_id: str | None = None,
@@ -271,10 +271,17 @@ async def create_dashboard_thread_record(
     workspace: str | None = None,
     extra_metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Create a dashboard thread with immutable ownership and visibility."""
+    """Create a dashboard thread with immutable ownership and visibility.
+
+    ``prompt`` is the first message the caller is about to send, validated before the
+    thread exists; ``None`` opens a thread with no first message, which needs a ``title``.
+    """
+    first_message = prompt is not None
+    if not first_message and not title:
+        raise ValueError("a thread opened without a first message needs a title")
     profile = await get_profile(login) or {}
     now_ms = _now_ms()
-    prompt = prompt.strip()
+    prompt = (prompt or "").strip()
     resolved_model, resolved_effort = await _resolve_agent_model_choice(
         profile, model_id, effort, workspace
     )
@@ -283,7 +290,8 @@ async def create_dashboard_thread_record(
         resolved_effort,
         has_images=bool(images),
     )
-    _user_message_content(prompt, images or [], model_id=resolved_model)
+    if first_message:
+        _user_message_content(prompt, images or [], model_id=resolved_model)
     chosen_model, chosen_effort = normalize_model_choice(model_id, effort)
     metadata_model = chosen_model or profile.get("default_model") or "Default"
     metadata_effort = chosen_effort or profile.get("reasoning_effort")
@@ -1156,7 +1164,7 @@ async def steer_running_thread(
     # The run may have ended between the busy check and the store write, past
     # the completion hook's own look at the store. ``reject`` keeps the two
     # from racing each other into a second run.
-    if not await _run_is_live(client, thread_id, live_run_id):
+    if not await run_is_live(client, thread_id, live_run_id):
         try:
             dispatched = await dispatch_pending_follow_ups(
                 thread_id, login, metadata, client=client, multitask_strategy="reject"
@@ -1196,7 +1204,8 @@ async def steer_running_thread(
     }
 
 
-async def _run_is_live(client: Any, thread_id: str, run_id: str | None) -> bool:
+async def run_is_live(client: Any, thread_id: str, run_id: str | None) -> bool:
+    """Whether ``run_id`` is still pending or running, read from the run itself."""
     if run_id is None:
         return False
     try:

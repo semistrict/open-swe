@@ -60,7 +60,7 @@ function SourcePreview(props: { name: string; contents: string }) {
       highlighterOptions={DIFF_WORKER_HIGHLIGHTER_OPTIONS}
     >
       <Virtualizer
-        className="min-h-0 flex-1 overflow-auto"
+        className="min-h-0 flex-1 overflow-auto [overflow-anchor:none]"
         config={DIFF_VIRTUALIZER_CONFIG}
       >
         <File

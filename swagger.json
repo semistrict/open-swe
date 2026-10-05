@@ -1090,6 +1090,27 @@
         "title": "CommentBody",
         "type": "object"
       },
+      "ConciergeThread": {
+        "description": "The signed-in person's concierge conversation, or ``None`` before it exists.",
+        "properties": {
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          }
+        },
+        "required": [
+          "thread_id"
+        ],
+        "title": "ConciergeThread",
+        "type": "object"
+      },
       "Conversation": {
         "properties": {
           "items": {
@@ -5525,6 +5546,20 @@
       "ToolCallView": {
         "additionalProperties": false,
         "properties": {
+          "attachments": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachments"
+          },
           "ended_at": {
             "anyOf": [
               {
@@ -5610,6 +5645,7 @@
           "output_preview",
           "output_truncated",
           "has_output",
+          "attachments",
           "namespace",
           "started_at",
           "ended_at"
@@ -8327,7 +8363,7 @@
     },
     "/dashboard/api/auth/dev-login": {
       "get": {
-        "description": "Sign in locally as the `gh` CLI's user, with no GitHub App involved.\n\nRefused outside `langgraph dev`, and still subject to the login allowlist.",
+        "description": "Sign in locally as the `gh` CLI's user, with no GitHub App involved.\n\nRefused outside `langgraph dev`, and still subject to the login allowlist.\nThe desktop app signs in through the user's browser, so for it this hands\nback a code to redeem, as the GitHub callback does, instead of a cookie.",
         "operationId": "auth_dev_login_dashboard_api_auth_dev_login_get",
         "parameters": [
           {
@@ -8344,6 +8380,40 @@
                 }
               ],
               "title": "Redirect To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "desktop_handoff",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Desktop Handoff"
+            }
+          },
+          {
+            "in": "query",
+            "name": "desktop_port",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 65535,
+                  "minimum": 1024,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Desktop Port"
             }
           }
         ],
@@ -15726,18 +15796,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "anyOf": [
-                      {
-                        "type": "string"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "title": "Response Api Concierge Dashboard Api Slack Concierge Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/ConciergeThread"
                 }
               }
             },
@@ -15750,6 +15809,32 @@
           }
         ],
         "summary": "Api Concierge",
+        "tags": [
+          "dashboard",
+          "slack"
+        ]
+      },
+      "post": {
+        "description": "Open the person's concierge conversation, creating it on first use.\n\nIt works without Slack; once Slack can reach the person, their DM continues\nthis same thread.",
+        "operationId": "api_open_concierge_dashboard_api_slack_concierge_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConciergeThread"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "DashboardSession": []
+          }
+        ],
+        "summary": "Api Open Concierge",
         "tags": [
           "dashboard",
           "slack"

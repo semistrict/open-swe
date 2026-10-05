@@ -51,11 +51,11 @@ and **Sign in for cloud mode** remains available from the local sidebar.
 
 ## Install on macOS
 
-Install Git, Node.js 22, `uv`, and [Bun](https://bun.com/docs/installation), clone this
-repository, then run this from its root:
+Install Git, [mise](https://mise.jdx.dev/) (which brings Node.js, pnpm, and `uv`), and
+[Bun](https://bun.com/docs/installation), clone this repository, then run this from its root:
 
 ```bash
-make install-desktop
+mise trust && mise run install-desktop
 ```
 
 The command fast-forwards to the latest `main`, builds Open SWE Desktop, and installs it in
@@ -64,22 +64,20 @@ backend settings, login sessions, and projects are preserved.
 
 ## Local development
 
-Install the workspace dependencies, then run the backend, desktop app, and web UI independently:
+Set up the checkout once with `mise run dev-init`, then run the backend, desktop app, and web UI independently:
 
 ```bash
-pnpm install # from the repo root
-
 # terminal 1
-make dev
+mise run dev
 
 # terminal 2
-make desktop
+mise run desktop
 
 # terminal 3 (optional web UI)
-make web
+mise run web
 ```
 
-`pnpm run dev:desktop` is equivalent to `make desktop`. The desktop app starts its private local-agent backend on a random loopback port while connecting cloud features and GitHub login to the shared backend at `http://localhost:2024`.
+`pnpm run dev:desktop` is equivalent to `mise run desktop`. The matching `make` targets still work for compatibility. The desktop app starts its private local-agent backend on a random loopback port while connecting cloud features and GitHub login to the shared backend at `http://localhost:2024`.
 
 Source launches use an isolated `Open SWE Development` Electron profile, so the dev app can run
 beside an installed `Open SWE` app without sharing its login session, backend configuration,
@@ -107,6 +105,18 @@ pnpm --dir desktop run dist # installer for the current platform
 
 Both commands build `ui/` and package its static output with Electron. Build outputs are written
 to `desktop/dist/`.
+
+`pack:development` packages "Open SWE Development" (`com.langchain.openswe.dev`): the development
+profile in a real app bundle, signed with whichever Developer ID identity is in your keychain.
+Unlike `electron . --dev`, macOS gives it its own entry under Notifications, so run notifications
+can be tried locally. It shares the development profile's backend and session, takes no updates,
+and leaves out Universal Links, which need LangChain's provisioning profile. electron-builder
+notarizes it when `APPLE_KEYCHAIN_PROFILE` names a `xcrun notarytool store-credentials` profile for
+the same team:
+
+```bash
+APPLE_KEYCHAIN_PROFILE=<profile> pnpm --dir desktop run pack:development
+```
 
 ## macOS releases
 

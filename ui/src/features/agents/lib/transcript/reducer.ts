@@ -31,6 +31,7 @@ import { contextTokensFromUsageMetadata } from "@/features/agents/lib/contextUsa
 import { attachmentUrl, fetchToolOutput } from "./api"
 import type { StructuredEntity } from "@/features/agents/lib/structuredInputMessages"
 import type {
+  AgentStatus,
   AnyImageChunk,
   Chunk,
   Message,
@@ -78,6 +79,8 @@ export interface TranscriptToolCallState {
   outputComplete: boolean
   /** Whether the server holds output worth fetching on expand. */
   hasOutput: boolean
+  /** Images the tool returned. */
+  attachments: ReadonlyArray<TranscriptAttachment>
   namespace: Namespace
   startedAt: string
 }
@@ -223,6 +226,7 @@ function indexToolCalls(
       // whether it is the whole output, so the endpoint stays available.
       outputComplete: false,
       hasOutput: row.has_output,
+      attachments: row.attachments ?? [],
       namespace: row.namespace,
       startedAt: row.started_at,
     }
@@ -440,19 +444,22 @@ function settledStatus(
 }
 
 /**
- * Waiting behind the live run. A requested turn is queued once its run exists,
- * and already while another turn is running: the run id only follows the
- * request by a moment, and the row should not change shape in between.
+ * Waiting behind another turn: a requested turn is queued while an earlier one
+ * is still running or waiting to. The turn next in line is not queued even
+ * once its run exists, so a thread's first message, or a follow-up sent while
+ * idle, stays in the record instead of passing through the queue for the
+ * moment before its run starts.
  */
 function isQueuedTurn(
   state: TranscriptState,
   turn: TranscriptTurnState
 ): boolean {
   if (turn.state !== "requested") return false
-  if (turn.runId !== null) return true
-  return Object.values(state.turns).some(
-    (other) => other.turnId !== turn.turnId && other.state === "running"
-  )
+  const position = state.turnOrder.indexOf(turn.turnId)
+  return state.turnOrder.slice(0, position).some((turnId) => {
+    const earlier = state.turns[turnId]
+    return earlier?.state === "running" || earlier?.state === "requested"
+  })
 }
 
 /**
@@ -465,6 +472,25 @@ function isCancelledBeforeStart(turn: TranscriptTurnState): boolean {
     turn.runId !== null &&
     turn.startedAt === null
   )
+}
+
+/**
+ * The thread's status as the dashboard names it: running while any turn is
+ * open, otherwise how the newest turn ended.
+ */
+export function agentStatusOf(state: TranscriptState): AgentStatus {
+  if (state.status === "running") return "running"
+  const newest = state.turns[state.turnOrder.at(-1) ?? ""]
+  switch (newest?.state) {
+    case "failed":
+      return "error"
+    case "interrupted":
+      return "interrupted"
+    case "completed":
+      return "finished"
+    default:
+      return state.status === "error" ? "error" : "idle"
+  }
 }
 
 /** A follow-up waiting for the live run to end, as the queue shows it. */
@@ -718,6 +744,7 @@ export function applyEvent(
         output: null,
         outputComplete: false,
         hasOutput: false,
+        attachments: [],
         namespace: payload.namespace,
         startedAt: at,
       })
@@ -738,6 +765,7 @@ export function applyEvent(
           payload.output_truncated
         ),
         hasOutput: payload.has_output,
+        attachments: payload.attachments ?? [],
       })
       break
     }
@@ -832,6 +860,8 @@ function toolChunk(
   }
   const output = call.output?.trim()
   if (output) chunk.output = output
+  const images = imageChunks(threadId, call.attachments)
+  if (images.length) chunk.images = images
   if (call.hasOutput && !call.outputComplete) {
     chunk.loadOutput = async () =>
       (await fetchToolOutput(threadId, call.toolCallId)).output
@@ -924,6 +954,7 @@ function buildHumanMessage(
         : "user",
     timestamp: row.createdAt,
     chunks,
+    ...(row.senderLogin ? { senderLogin: row.senderLogin } : {}),
     ...(parsed.type === "message"
       ? {
           structuredSenderId: parsed.sender,
@@ -1037,7 +1068,13 @@ function turnMessages(
         const message = humanMessage(state.threadId, row, state.entities)
         if (!message) continue
         turnKey = row.messageId
-        out.push(message)
+        // The request records the plain text; the run re-records it with its
+        // sender a moment later, so until then the name is still on its way.
+        const senderPending =
+          (turn.state === "requested" || turn.state === "running") &&
+          row.senderLogin !== null &&
+          !message.structuredSenderName
+        out.push(senderPending ? { ...message, senderPending } : message)
         continue
       }
       const chunks: Array<Chunk> = []
@@ -1055,6 +1092,12 @@ function turnMessages(
     append(call.toolCallId, call.startedAt, [toolChunk(state.threadId, call)])
   }
   flush()
+  // A stopped turn says so where it ends, rather than reading as finished.
+  if (turn.state === "interrupted" && namespace.length === 0) {
+    const last = out.at(-1)
+    if (last?.author === "agent")
+      out[out.length - 1] = { ...last, stopped: true }
+  }
 
   if (!perNamespace) {
     perNamespace = new Map()

@@ -14,6 +14,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check": "pnpm run typecheck && pnpm run test && pnpm run build:ui",
     "pack": "pnpm run build:ui && pnpm run build && pnpm run build:local-backend && pnpm run build:cli && electron-builder --dir",
+    "pack:development": "pnpm run build:ui && pnpm run build && pnpm run build:local-backend && pnpm run build:cli && electron-builder --dir -c.appId=com.langchain.openswe.dev -c.productName=\"Open SWE Development\" -c.extraMetadata.openSweBuildProfile=development -c.mac.entitlements=entitlements.mac.inherit.plist",
     "dist": "pnpm run build:ui && pnpm run build && pnpm run build:local-backend && pnpm run build:cli && electron-builder",
     "build:local-backend": "node scripts/build-local-backend.cjs",
     "build:cli": "pnpm --filter open-swe-cli run build"
@@ -30,7 +31,6 @@
     "asarUnpack": [
       "node_modules/node-pty/**/*"
     ],
-    "afterSign": "build/notarize.cjs",
     "npmRebuild": true,
     "icon": "resources/icon.png",
     "directories": {
@@ -88,8 +88,13 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "entitlements.mac.plist",
-      "extendInfo": { "NSUserActivityTypes": ["NSUserActivityTypeBrowsingWeb"] },
+      "extendInfo": {
+        "NSUserActivityTypes": [
+          "NSUserActivityTypeBrowsingWeb"
+        ]
+      },
       "entitlementsInherit": "entitlements.mac.inherit.plist",
+      "signIgnore": "/local-backend/(?!runtime/bin/)(?!.*\\.(?:so|dylib)$)",
       "target": [
         "dmg",
         "zip"
@@ -114,7 +119,6 @@
   "license": "MIT",
   "homepage": "https://github.com/langchain-ai/open-swe",
   "devDependencies": {
-    "@electron/notarize": "3.1.1",
     "@types/node": "26.6.3",
     "electron": "44.4.5",
     "electron-builder": "26.15.3",

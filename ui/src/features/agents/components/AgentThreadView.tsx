@@ -65,8 +65,9 @@ import { agentsApi } from "@/features/agents/lib/api"
 import { reportError } from "@/lib/errorReporting"
 import { useSession } from "@/lib/session"
 import { useIsMobile } from "@/lib/useIsMobile"
-import { useThreadSource } from "@/features/agents/lib/threadSource/ThreadSourceProvider"
+import { useThreadSource } from "@/features/agents/lib/threadSource/context"
 import { useConnectionStatus } from "@/features/agents/lib/stream/useReconnectStatus"
+import { useNoticeableWait } from "@/features/agents/lib/useNoticeableWait"
 import { runTranscriptCommitted } from "@/lib/perf/streaming"
 import {
   threadHydrated,
@@ -150,9 +151,12 @@ export function AgentThreadView({ thread }: AgentThreadViewProps) {
   }
   const scrollControlRef = useRef<MessagesScrollControl | null>(null)
   const routed = source.routed
-  const activeModel = models.find(
-    (model) => model.id === activeSelection?.modelId
-  )
+  // The model whose context window the meter measures against: the one picked
+  // for the next message, or under Auto the one the router chose for the live
+  // run, else the one that served the last run.
+  const contextModelId =
+    activeSelection?.modelId ?? routed?.modelId ?? thread.model
+  const contextModel = models.find((model) => model.id === contextModelId)
   const baseMessages = source.messages
   const isStreaming =
     source.kind === "transcript"
@@ -424,9 +428,10 @@ export function AgentThreadView({ thread }: AgentThreadViewProps) {
     () =>
       visiblePendingMessages(
         thread.pendingMessages?.filter((message) => !message.queued),
-        [...baseMessages, ...queued.map((entry) => entry.message)]
+        [...baseMessages, ...queued.map((entry) => entry.message)],
+        login
       ),
-    [baseMessages, queued, thread.pendingMessages]
+    [baseMessages, login, queued, thread.pendingMessages]
   )
   const visibleMessages = useMemo(
     () => [...baseMessages, ...pendingMessages],
@@ -632,13 +637,7 @@ export function AgentThreadView({ thread }: AgentThreadViewProps) {
               }
             />
           ) : isHydrating ? (
-            <div className="flex flex-1 items-center justify-center px-6">
-              <img
-                src={`${import.meta.env.BASE_URL}logo-mark.png`}
-                alt="Loading conversation"
-                className="size-12 animate-pulse"
-              />
-            </div>
+            <HydratingPlaceholder />
           ) : (
             <PullRequestPreviewProvider
               pullRequests={thread.pullRequests ?? []}
@@ -745,7 +744,7 @@ export function AgentThreadView({ thread }: AgentThreadViewProps) {
                 skills={skills.data}
                 contextUsage={{
                   usedTokens,
-                  contextWindow: activeModel?.context_window ?? null,
+                  contextWindow: contextModel?.context_window ?? null,
                 }}
               />
             </AgentComposerDock>
@@ -759,6 +758,22 @@ export function AgentThreadView({ thread }: AgentThreadViewProps) {
         collapsed={panelCollapsed}
         onCollapsedChange={handlePanelCollapsedChange}
       />
+    </div>
+  )
+}
+
+/** The transcript's space while it loads; the logo appears only for a noticeable wait. */
+function HydratingPlaceholder() {
+  const noticeable = useNoticeableWait()
+  return (
+    <div className="flex flex-1 items-center justify-center px-6">
+      {noticeable && (
+        <img
+          src={`${import.meta.env.BASE_URL}logo-mark.png`}
+          alt="Loading conversation"
+          className="size-12 animate-pulse"
+        />
+      )}
     </div>
   )
 }

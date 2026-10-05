@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render } from "@testing-library/react"
+import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { afterEach, expect, it, vi } from "vitest"
 
@@ -143,4 +143,53 @@ it("registers the active thread's commands once and then stops", async () => {
   )
 
   expect(probeRenders).toBeLessThanOrEqual(RENDER_BUDGET)
+})
+
+it("opens the command palette with mod+K while the composer has focus", async () => {
+  Object.defineProperty(navigator, "platform", {
+    value: "MacIntel",
+    configurable: true,
+  })
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <AppCommandProvider>
+        <div aria-label="Message" contentEditable role="textbox" tabIndex={0} />
+      </AppCommandProvider>
+    </QueryClientProvider>
+  )
+  const composer = screen.getByRole("textbox", { name: "Message" })
+  composer.focus()
+
+  fireEvent.keyDown(composer, { key: "k", metaKey: true })
+
+  expect(
+    await screen.findByRole("dialog", {
+      name: "Search commands, threads, and pull requests",
+    })
+  ).toBeTruthy()
+})
+
+it("leaves a bare-key shortcut to the composer while it has focus", () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <AppCommandProvider>
+        <div aria-label="Message" contentEditable role="textbox" tabIndex={0} />
+      </AppCommandProvider>
+    </QueryClientProvider>
+  )
+  const composer = screen.getByRole("textbox", { name: "Message" })
+  composer.focus()
+
+  stub.noop.mockClear()
+  // `c` starts a new thread elsewhere; typed here it is just a letter.
+  const typed = fireEvent.keyDown(composer, { key: "c" })
+
+  expect(typed).toBe(true)
+  expect(stub.noop).not.toHaveBeenCalled()
 })

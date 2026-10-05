@@ -68,3 +68,28 @@ export function pickComposerRepo({
   }
   return null
 }
+
+/**
+ * The offered repositories with the ones the user has threads in first, most
+ * recently active first, and the rest in their given order. A long
+ * alphabetical list otherwise buries the handful of repositories in use.
+ */
+export function orderByRecentUse<T extends RepoOption>(
+  offered: ReadonlyArray<T>,
+  recent: ReadonlyArray<{ repoFullName: string; updatedAt: number }>
+): Array<T> {
+  const lastUsed = new Map(
+    recent.map((repo) => [repo.repoFullName.toLowerCase(), repo.updatedAt])
+  )
+  const used = offered
+    .filter((repo) => lastUsed.has(repo.full_name.toLowerCase()))
+    .sort(
+      (left, right) =>
+        (lastUsed.get(right.full_name.toLowerCase()) ?? 0) -
+        (lastUsed.get(left.full_name.toLowerCase()) ?? 0)
+    )
+  return [
+    ...used,
+    ...offered.filter((repo) => !lastUsed.has(repo.full_name.toLowerCase())),
+  ]
+}

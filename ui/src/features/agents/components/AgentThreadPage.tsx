@@ -4,7 +4,7 @@ import { LoadError, useLoadTimedOut } from "@/components/LoadError"
 
 import { AgentThreadView } from "@/features/agents/components/AgentThreadView"
 import { SubagentThreadView } from "@/features/agents/components/subagents/SubagentThreadView"
-import { Skeleton } from "@/components/ui/skeleton"
+import { PaneSkeleton } from "@/features/agents/components/PaneSkeleton"
 import { AgentThreadStreamBoundary } from "@/features/agents/lib/provider/useIsInAgentThreadStream"
 import { ThreadSourceProvider } from "@/features/agents/lib/threadSource/ThreadSourceProvider"
 import { useAgentThread } from "@/features/agents/lib/queries"
@@ -76,11 +76,7 @@ function AgentThreadContent({
   }, [active, title])
 
   if (threadQuery.isPending && !timedOut) {
-    return (
-      <main className="flex min-w-0 flex-1 items-center justify-center p-6">
-        <Skeleton className="h-40 w-full max-w-md" />
-      </main>
-    )
+    return <PaneSkeleton />
   }
 
   if (!threadQuery.data) {

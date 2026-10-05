@@ -2,7 +2,7 @@ import { useToolCalls } from "@langchain/react"
 import { Check, Loader2, X } from "lucide-react"
 
 import { humanizeToolName } from "@/features/agents/lib/toolNames"
-import { useThreadSource } from "@/features/agents/lib/threadSource/ThreadSourceProvider"
+import { useThreadSource } from "@/features/agents/lib/threadSource/context"
 import type { AgentStream } from "@/features/agents/lib/stream/connection"
 
 type ActivityStatus = "in_progress" | "completed" | "error"

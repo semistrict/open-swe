@@ -17,29 +17,44 @@ const LOGIN_PATH = "/dashboard/api/auth/login";
 const DESKTOP_EXCHANGE_PATH = "/dashboard/api/auth/desktop/exchange";
 const CONNECT_PROVIDERS = new Set(["slack", "notion"]);
 
-function resolveAppRuntime({ argv, isPackaged, appDataPath }) {
-  const isDevelopment = !isPackaged || argv.includes("--dev");
+/**
+ * Which profile the app runs as. A development run, an unpackaged one, one
+ * launched with `--dev`, or a build packaged as `development`, keeps its own
+ * profile and never takes the release channel's updates, which are signed by
+ * another team and would replace it.
+ */
+function resolveAppRuntime({ argv, isPackaged, appDataPath, buildProfile }) {
+  const isDevelopment =
+    !isPackaged || argv.includes("--dev") || buildProfile === "development";
+  // An explicit profile wins, so a test run never shares one with an app the
+  // developer has open: on macOS the default sits under Application Support
+  // whatever HOME says.
+  const explicitUserData = argumentValue(argv, "--user-data-dir");
   return {
     isDevelopment,
+    receivesUpdates: !isDevelopment,
     name: isDevelopment ? DEVELOPMENT_APP_NAME : APP_NAME,
     appUserModelId: isDevelopment
       ? DEVELOPMENT_APP_USER_MODEL_ID
       : APP_USER_MODEL_ID,
-    userDataPath: isDevelopment
-      ? path.join(appDataPath, DEVELOPMENT_USER_DATA_DIRECTORY)
-      : null,
+    userDataPath:
+      explicitUserData ??
+      (isDevelopment
+        ? path.join(appDataPath, DEVELOPMENT_USER_DATA_DIRECTORY)
+        : null),
   };
 }
 
-function cliBackendUrl(argv) {
-  for (const name of ["--backend-url", "--url"]) {
-    const inline = argv.find((argument) => argument.startsWith(`${name}=`));
-    if (inline) return inline.slice(name.length + 1);
+/** The value of `--name=value` or `--name value`. */
+function argumentValue(argv, name) {
+  const inline = argv.find((argument) => argument.startsWith(`${name}=`));
+  if (inline) return inline.slice(name.length + 1);
+  const index = argv.indexOf(name);
+  return index === -1 ? undefined : argv[index + 1];
+}
 
-    const index = argv.indexOf(name);
-    if (index !== -1) return argv[index + 1];
-  }
-  return undefined;
+function cliBackendUrl(argv) {
+  return argumentValue(argv, "--backend-url") ?? argumentValue(argv, "--url");
 }
 
 function validateBackendUrl(value) {
@@ -50,13 +65,13 @@ function validateBackendUrl(value) {
   return url.toString();
 }
 
-function resolveBackendUrl({ argv, env, isPackaged, storedUrl }) {
+function resolveBackendUrl({ argv, env, isDevelopment, storedUrl }) {
   const value =
     cliBackendUrl(argv) ||
     env.OPEN_SWE_BACKEND_URL ||
     env.OPEN_SWE_DESKTOP_URL ||
     storedUrl ||
-    (isPackaged ? undefined : DEFAULT_DEVELOPMENT_BACKEND_URL);
+    (isDevelopment ? DEFAULT_DEVELOPMENT_BACKEND_URL : undefined);
   return value ? validateBackendUrl(value.trim()) : null;
 }
 

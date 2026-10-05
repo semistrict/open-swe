@@ -13,6 +13,7 @@ import { QueryClientProvider } from "@tanstack/react-query"
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools"
 
 import appCss from "../styles.css?url"
+import interLatin from "@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url"
 import type { QueryClient } from "@tanstack/react-query"
 import { AppCommandProvider } from "@/lib/appCommands"
 import { resolveSessionOnServer } from "@/lib/session-ssr"
@@ -25,6 +26,23 @@ import { apiWarmupScript } from "@/features/agents/lib/apiWarmup"
 import { isPerfHudEnabled } from "@/lib/perf/trace"
 
 const PerfHud = lazy(() => import("@/lib/perf/PerfHud"))
+// Dev builds only, so rrweb never reaches a production bundle.
+const FlinchRecorder = import.meta.env.DEV
+  ? lazy(() => import("@/lib/flinch/FlinchRecorder"))
+  : null
+
+/** Client-only: rrweb records the live DOM, which a server render does not have. */
+function FlinchRecorderMount() {
+  const [mounted, setMounted] = useState(false)
+  // oxlint-disable-next-line react/set-state-in-effect
+  useEffect(() => setMounted(true), [])
+  if (!FlinchRecorder || !mounted) return null
+  return (
+    <Suspense fallback={null}>
+      <FlinchRecorder />
+    </Suspense>
+  )
+}
 
 /** Client-only: the flag lives in localStorage, so the server render never shows it. */
 function PerfHudMount() {
@@ -58,6 +76,16 @@ export const Route = createRootRouteWithContext<{
     ],
     links: [
       { rel: "stylesheet", href: appCss },
+      // Inter is `font-display: swap`, so text first painted before it loads
+      // reflows when it arrives. Fetching it beside the stylesheet, rather
+      // than once the stylesheet is parsed, has it ready for the first paint.
+      {
+        rel: "preload",
+        href: interLatin,
+        as: "font",
+        type: "font/woff2",
+        crossOrigin: "anonymous",
+      },
       {
         rel: "manifest",
         href: `${import.meta.env.BASE_URL}manifest.webmanifest`,
@@ -93,7 +121,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         {warmupScript && (
-          <script dangerouslySetInnerHTML={{ __html: warmupScript }} />
+          // Built from a function's source, which the server and client
+          // bundles compile differently; only the server's copy ever runs.
+          <script
+            dangerouslySetInnerHTML={{ __html: warmupScript }}
+            suppressHydrationWarning
+          />
         )}
         <HeadContent />
       </head>
@@ -112,6 +145,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           <VersionMismatchBanner />
           <AppCommandProvider>{children ?? <Outlet />}</AppCommandProvider>
           <PerfHudMount />
+          <FlinchRecorderMount />
           {import.meta.env.VITE_DEVTOOLS !== "false" && (
             <>
               <TanStackDevtools

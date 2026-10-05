@@ -43,7 +43,6 @@ interface ScrollState {
   /** The offset the user chose, restored when layout shifts under them. */
   manualTop: number
   previousTop: number
-  frame: number | null
   /** A remembered offset still waiting for enough content to scroll to. */
   pendingRestoreTop: number | null
   /**
@@ -73,7 +72,6 @@ export function useTranscriptScroll({
     followTail: true,
     manualTop: 0,
     previousTop: 0,
-    frame: null,
     pendingRestoreTop: null,
     prependAnchor: null,
   })
@@ -85,27 +83,14 @@ export function useTranscriptScroll({
     setShowScrollToBottom(!isNearBottom(el))
   }, [])
 
-  const cancelScheduledJump = useCallback(() => {
-    if (state.current.frame === null) return
-    window.cancelAnimationFrame(state.current.frame)
-    state.current.frame = null
-  }, [])
-
+  // Called from layout effects and the ResizeObserver, both of which run after
+  // layout and before paint: the tail is on screen in the frame content lands.
   const jumpToBottom = useCallback(() => {
     const el = scrollRef.current
     if (!el) return
     el.scrollTop = el.scrollHeight
     settle(el, el.scrollTop)
   }, [settle])
-
-  const scheduleJumpToBottom = useCallback(() => {
-    if (!state.current.followTail) return
-    cancelScheduledJump()
-    state.current.frame = window.requestAnimationFrame(() => {
-      state.current.frame = null
-      if (state.current.followTail) jumpToBottom()
-    })
-  }, [cancelScheduledJump, jumpToBottom])
 
   /**
    * Put the reader back where they were after an older page prepended: the
@@ -150,9 +135,8 @@ export function useTranscriptScroll({
   const scrollToBottom = useCallback(() => {
     state.current.followTail = true
     state.current.pendingRestoreTop = null
-    cancelScheduledJump()
     jumpToBottom()
-  }, [cancelScheduledJump, jumpToBottom])
+  }, [jumpToBottom])
 
   // Entering a transcript: resume where the user left it, or follow the tail
   // when they were pinned there (or have never seen it).
@@ -165,12 +149,11 @@ export function useTranscriptScroll({
     if (remembered && !remembered.atBottom) {
       state.current.followTail = false
       state.current.pendingRestoreTop = remembered.top
-      cancelScheduledJump()
       applyPendingRestore(el)
       return
     }
     scrollToBottom()
-  }, [applyPendingRestore, cancelScheduledJump, scrollKey, scrollToBottom])
+  }, [applyPendingRestore, scrollKey, scrollToBottom])
 
   // New or reflowed content: keep following, or hold the user's place.
   useLayoutEffect(() => {
@@ -184,7 +167,7 @@ export function useTranscriptScroll({
       return
     }
     if (state.current.followTail) {
-      scheduleJumpToBottom()
+      jumpToBottom()
       return
     }
     const target = Math.min(state.current.manualTop, maxScrollTop(el))
@@ -196,9 +179,9 @@ export function useTranscriptScroll({
   }, [
     applyPendingRestore,
     isStreaming,
+    jumpToBottom,
     messages,
     restoreAfterPrepend,
-    scheduleJumpToBottom,
   ])
 
   // The user's own scrolling decides whether we keep following the tail.
@@ -210,7 +193,6 @@ export function useTranscriptScroll({
       const nearBottom = isNearBottom(el)
       if (top < state.current.previousTop - 1) {
         state.current.followTail = false
-        cancelScheduledJump()
       } else if (nearBottom) {
         state.current.followTail = true
       }
@@ -218,11 +200,8 @@ export function useTranscriptScroll({
       if (scrollKey) remember(scrollKey, { top, atBottom: nearBottom })
     }
     el.addEventListener("scroll", handleScroll, { passive: true })
-    return () => {
-      el.removeEventListener("scroll", handleScroll)
-      cancelScheduledJump()
-    }
-  }, [cancelScheduledJump, scrollKey, settle])
+    return () => el.removeEventListener("scroll", handleScroll)
+  }, [scrollKey, settle])
 
   useEffect(() => {
     const scroller = scrollRef.current
@@ -232,7 +211,7 @@ export function useTranscriptScroll({
       if (restoreAfterPrepend(scroller)) return
       if (applyPendingRestore(scroller)) return
       if (state.current.followTail) {
-        scheduleJumpToBottom()
+        jumpToBottom()
         return
       }
       const max = maxScrollTop(scroller)
@@ -246,7 +225,7 @@ export function useTranscriptScroll({
     observer.observe(scroller)
     observer.observe(content)
     return () => observer.disconnect()
-  }, [applyPendingRestore, restoreAfterPrepend, scheduleJumpToBottom])
+  }, [applyPendingRestore, jumpToBottom, restoreAfterPrepend])
 
   return {
     scrollRef,

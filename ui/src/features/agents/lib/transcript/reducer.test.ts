@@ -11,6 +11,7 @@ import {
   subagentMessages,
   toMessages,
 } from "./reducer"
+import { attachmentUrl } from "./api"
 import type { TranscriptState } from "./reducer"
 import type { Message, ToolExecutionChunk } from "@/features/agents/lib/types"
 import type { AnyImageChunk } from "@/features/agents/lib/types"
@@ -80,6 +81,7 @@ function toolCall(
     status: "completed",
     output_preview: null,
     has_output: false,
+    attachments: null,
     namespace: [],
     ...row,
   }
@@ -322,6 +324,60 @@ describe("transcript events", () => {
     })
 
     expect(requested.status).toBe("running")
+  })
+
+  it("marks the turn the person stopped, and only that one", () => {
+    const base = fromSnapshot(twoTurnSnapshot())
+    const stopped = applyEvent(base, {
+      ...appended(11, {}),
+      event_type: "turn.interrupted",
+      payload: { turn_id: "turn-2" },
+    })
+    const stoppedIds = (state: TranscriptState) =>
+      toMessages(state)
+        .filter((message) => message.stopped)
+        .map((message) => message.id)
+
+    expect(stoppedIds(base)).toEqual([])
+    expect(stoppedIds(stopped)).toEqual(["ai-2"])
+  })
+
+  it("keeps the next turn in the record while its run waits to start", () => {
+    const state = fromSnapshot(
+      snapshot({
+        thread: { status: "running" },
+        turns: [
+          {
+            ...turn("turn-1", "2026-01-01T00:00:00Z", "requested"),
+            run_id: "run-1",
+          },
+          {
+            ...turn("turn-2", "2026-01-01T00:00:05Z", "requested"),
+            run_id: "run-2",
+          },
+        ],
+        messages: [
+          messageRow({
+            message_id: "human-1",
+            turn_id: "turn-1",
+            role: "human",
+            text: "first ask",
+            created_at: "2026-01-01T00:00:00Z",
+          }),
+          messageRow({
+            message_id: "human-2",
+            turn_id: "turn-2",
+            role: "human",
+            text: "second ask",
+            created_at: "2026-01-01T00:00:05Z",
+          }),
+        ],
+      })
+    )
+
+    // A new thread's first message is next in line, not behind anything.
+    expect(toMessages(state).map((message) => message.id)).toEqual(["human-1"])
+    expect(queuedTurns(state).map((entry) => entry.turnId)).toEqual(["turn-2"])
   })
 
   it("keeps a queued follow-up out of the record until its run starts", () => {
@@ -700,6 +756,34 @@ describe("tool output", () => {
     )
 
     expect(readChunk(settled)?.loadOutput).toBeTypeOf("function")
+  })
+
+  it("shows an image a tool returned as the image, not as text", () => {
+    const settled = applyEvent(
+      fromSnapshot(twoTurnSnapshot()),
+      toolCompleted(11, {
+        has_output: false,
+        attachments: [
+          {
+            mime_type: "image/png",
+            attachment_id: "image-1",
+            file_name: null,
+            url: null,
+          },
+        ],
+      })
+    )
+
+    const chunk = readChunk(settled)
+    expect(chunk?.output).toBeUndefined()
+    expect(chunk?.images).toEqual([
+      {
+        kind: "image",
+        url: attachmentUrl("thread-1", "image-1"),
+        credentials: "session",
+        mimeType: "image/png",
+      },
+    ])
   })
 })
 

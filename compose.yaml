@@ -1,19 +1,16 @@
+# One Postgres per checkout: the Makefile sets the project name, the port, and the data
+# directory for each (see DEV_STATE_DIR), so run it through `mise run postgres`.
 services:
   postgres:
     image: postgres:16
-    container_name: open-swe-postgres
     environment:
       POSTGRES_PASSWORD: postgres
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:${OPEN_SWE_POSTGRES_PORT:?run mise run dev-init}:5432"
     volumes:
-      - postgres:/var/lib/postgresql/data
+      - "${OPEN_SWE_POSTGRES_DATA:?run mise run dev-init}:/var/lib/postgresql/data"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 1s
       timeout: 5s
       retries: 30
-
-volumes:
-  postgres:
-    name: open-swe-postgres

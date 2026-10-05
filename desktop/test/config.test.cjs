@@ -23,7 +23,7 @@ const {
 
 test("uses the local backend for development", () => {
   assert.equal(
-    resolveBackendUrl({ argv: [], env: {}, isPackaged: false }),
+    resolveBackendUrl({ argv: [], env: {}, isDevelopment: true }),
     `${DEFAULT_DEVELOPMENT_BACKEND_URL}/`,
   );
 });
@@ -32,6 +32,7 @@ test("uses an isolated app profile for development runs", () => {
   const appDataPath = path.join("/tmp", "open-swe-app-data");
   const expected = {
     isDevelopment: true,
+    receivesUpdates: false,
     name: "Open SWE Development",
     appUserModelId: "com.langchain.openswe.dev",
     userDataPath: path.join(appDataPath, "Open SWE Development"),
@@ -45,9 +46,19 @@ test("uses an isolated app profile for development runs", () => {
     expected,
   );
   assert.deepEqual(
+    resolveAppRuntime({
+      argv: [],
+      isPackaged: true,
+      appDataPath,
+      buildProfile: "development",
+    }),
+    expected,
+  );
+  assert.deepEqual(
     resolveAppRuntime({ argv: [], isPackaged: true, appDataPath }),
     {
       isDevelopment: false,
+      receivesUpdates: true,
       name: "Open SWE",
       appUserModelId: "com.langchain.openswe",
       userDataPath: null,
@@ -55,19 +66,40 @@ test("uses an isolated app profile for development runs", () => {
   );
 });
 
-test("requires backend configuration in packaged builds", () => {
+test("keeps an explicit user data directory in either profile", () => {
+  const appDataPath = path.join("/tmp", "open-swe-app-data");
+  const userData = path.join("/tmp", "e2e-profile");
   assert.equal(
-    resolveBackendUrl({ argv: [], env: {}, isPackaged: true }),
+    resolveAppRuntime({
+      argv: ["--dev", `--user-data-dir=${userData}`],
+      isPackaged: false,
+      appDataPath,
+    }).userDataPath,
+    userData,
+  );
+  assert.equal(
+    resolveAppRuntime({
+      argv: ["--user-data-dir", userData],
+      isPackaged: true,
+      appDataPath,
+    }).userDataPath,
+    userData,
+  );
+});
+
+test("requires backend configuration in release builds", () => {
+  assert.equal(
+    resolveBackendUrl({ argv: [], env: {}, isDevelopment: false }),
     null,
   );
 });
 
-test("uses the stored backend in packaged builds", () => {
+test("uses the stored backend in release builds", () => {
   assert.equal(
     resolveBackendUrl({
       argv: [],
       env: {},
-      isPackaged: true,
+      isDevelopment: false,
       storedUrl: "https://open-swe.example.com",
     }),
     "https://open-swe.example.com/",
@@ -79,7 +111,7 @@ test("command-line and environment configuration override the stored backend", (
     resolveBackendUrl({
       argv: ["--backend-url=https://cli.example"],
       env: { OPEN_SWE_BACKEND_URL: "https://env.example" },
-      isPackaged: true,
+      isDevelopment: false,
       storedUrl: "https://stored.example",
     }),
     "https://cli.example/",
@@ -91,7 +123,7 @@ test("supports the original desktop URL overrides", () => {
     resolveBackendUrl({
       argv: [],
       env: { OPEN_SWE_DESKTOP_URL: "http://localhost:4000" },
-      isPackaged: true,
+      isDevelopment: false,
     }),
     "http://localhost:4000/",
   );
@@ -99,7 +131,7 @@ test("supports the original desktop URL overrides", () => {
     resolveBackendUrl({
       argv: ["--url=https://legacy.example/app"],
       env: {},
-      isPackaged: true,
+      isDevelopment: false,
     }),
     "https://legacy.example/app",
   );

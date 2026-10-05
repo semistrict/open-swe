@@ -6,7 +6,7 @@ max_concurrency = 10
 # deployment's production project.
 langsmith_project = "open-swe-evals"
 # Project the reviewer server traces into, read for per-PR cost. Blank uses
-# LANGSMITH_PROJECT from .env, which is what local `make dev` traces into.
+# LANGSMITH_PROJECT from .env, which is what local `mise run dev` traces into.
 reviewer_langsmith_project = ""
 
 # Leave blank to use LANGGRAPH_URL or local dev.

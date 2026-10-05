@@ -56,7 +56,13 @@ export function MessageImage({
   chunk: AnyImageChunk
   className?: string
 }) {
-  const { src, failed } = useImageSource(chunk)
+  const { src: loaded, failed } = useImageSource(chunk)
+  // The sent bubble swaps its inline image for the transcript's attachment,
+  // which still has to be fetched; keep the picture already on screen until
+  // the new source is ready instead of collapsing to the loading box.
+  const [held, setHeld] = useState(loaded)
+  if (loaded && loaded !== held) setHeld(loaded)
+  const src = loaded ?? (failed ? null : held)
   const label = chunk.fileName || "image"
 
   if (failed || !src)

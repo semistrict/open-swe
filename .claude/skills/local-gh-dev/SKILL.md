@@ -38,8 +38,8 @@ session. It is refused unless `langgraph dev` is the runtime, and the
    Startup aborts with `ALLOWED_GITHUB_ORGS or ALLOWED_GITHUB_USERS must be configured`
    when the allowlist is missing.
 
-4. Start the backend. `make dev` covers this when 2024 is free and you want its
-   postgres container; otherwise run it directly:
+4. Start the backend. `mise run dev` covers this when 2024 is free and you want its
+   postgres container (after `mise run dev-init` once); otherwise run it directly:
 
    ```bash
    uv run langgraph dev --no-browser --port 2026 --n-jobs-per-worker 10
@@ -57,14 +57,13 @@ session. It is refused unless `langgraph dev` is the runtime, and the
 
 ## Postgres
 
-`make dev` starts an `open-swe-postgres` container unless `POSTGRES_URI` is set, and
-fails with a name conflict when another worktree already started one. Reuse it:
+Each checkout has its own container, project `open-swe-<hash>`, on the loopback port
+`mise run dev-init` wrote to `~/.open-swe/<checkout>-<hash>/postgres-port`. `mise run dev` starts it
+and sets `POSTGRES_URI` unless `.env` sets one. Find this checkout's:
 
 ```bash
-docker ps --filter name=open-swe-postgres --format '{{.Names}} {{.Status}} {{.Ports}}'
+docker ps --filter label=com.docker.compose.project --format '{{.Names}} {{.Ports}}'
 ```
-
-It binds `127.0.0.1:5433`, so `POSTGRES_URI=postgresql://postgres:postgres@127.0.0.1:5433/postgres`.
 
 ## The App token, and why `gh` covers it
 
@@ -95,7 +94,7 @@ is stubbed; runs cost money and take minutes.
    `PrepareReviewerRunMiddleware.before_agent`, so the agent never starts and the
    review settles with zero findings — which reads exactly like a model that chose to
    say nothing. Either use `local`, or expose the dashboard on a real hostname
-   (`make tunnel`, see docs/DEVELOPMENT.md) before using `langsmith`.
+   (`mise run tunnel`, see docs/DEVELOPMENT.md) before using `langsmith`.
 
 3. Get a session cookie, then post the trigger. Mutations are CSRF-checked against
    `DASHBOARD_BASE_URL`, so send a matching `Origin` — without it you get
@@ -123,7 +122,7 @@ is stubbed; runs cost money and take minutes.
    is broken":
 
    ```bash
-   docker exec open-swe-postgres psql -U postgres -d postgres \
+   docker exec "$(docker ps -q --filter label=com.docker.compose.project=open-swe-$(printf %s "$PWD" | cksum | cut -d' ' -f1))" psql -U postgres -d postgres \
      -c "SELECT kind, author, summary FROM open_swe.pull_request_guidance"
    ```
 

@@ -145,8 +145,16 @@ html[data-agents-theme] .shimmer-text {
 @media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
   .agents-ui .shimmer-text,
   html[data-agents-theme] .shimmer-text {
-    background: linear-gradient(90deg, transparent, var(--foreground), transparent)
-      -4.5rem 0 / 4.5rem 100% no-repeat var(--muted-foreground);
+    /*
+     * Longhands, not the `background` shorthand: Chrome serializes a shorthand
+     * holding var() with every longhand empty, so session recordings replayed
+     * this text as transparent on nothing, and the indicator vanished.
+     */
+    background-image: linear-gradient(90deg, transparent, var(--foreground), transparent);
+    background-position: -4.5rem 0;
+    background-size: 4.5rem 100%;
+    background-repeat: no-repeat;
+    background-color: var(--muted-foreground);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;

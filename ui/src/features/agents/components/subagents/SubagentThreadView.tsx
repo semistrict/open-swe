@@ -12,7 +12,7 @@ import { LoadError } from "@/components/LoadError"
 import { useSidebarCollapsed } from "@/components/sidebar-layout"
 import { Messages } from "@/features/agents/components/messages"
 import { asString } from "@/features/agents/components/subagents/SubagentCard"
-import { useThreadSource } from "@/features/agents/lib/threadSource/ThreadSourceProvider"
+import { useThreadSource } from "@/features/agents/lib/threadSource/context"
 import type { AgentThread, Message } from "@/features/agents/lib/types"
 import { cn } from "@/lib/utils"
 

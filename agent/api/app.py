@@ -44,8 +44,10 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     from agent.users import User
     from agent.users.import_concierge_mode import import_concierge_mode
     from agent.users.import_store import import_user_mappings
+    from agent.utils import shutdown
     from agent.utils.model import validate_local_dev_llm_config
 
+    shutdown.install()
     pin_single_event_loop()
     validate_github_login_allowlist()
     validate_sandbox_startup_config()

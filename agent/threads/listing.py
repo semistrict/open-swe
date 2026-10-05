@@ -18,6 +18,7 @@ from agent.threads.pins import list_thread_pin_ids, pin_thread, unpin_thread
 from agent.threads.summary import (
     _SURFACED_SOURCES,
     DASHBOARD_SOURCE,
+    TRANSCRIPT_VERSION,
     _is_automation_thread,
     _is_thread_resolved,
     _metadata_repo,
@@ -35,6 +36,7 @@ from agent.threads.summary import (
     thread_source,
     thread_updated_ms,
 )
+from agent.transcript.status import TranscriptActivity, transcript_activity
 from agent.transcript.subagents import attach_subagents
 from agent.utils.json_types import JsonObject, ThreadLike, as_thread_dict
 from agent.utils.thread_ops import langgraph_client
@@ -276,6 +278,7 @@ async def _summarize_thread(
     *,
     refresh_active_run: bool = True,
     minimal_run_update: bool = False,
+    transcripts: Mapping[str, TranscriptActivity] | None = None,
 ) -> dict[str, Any]:
     thread = await settle_review_walkthrough(client, thread)
     latest_run_status = latest_run_id = None
@@ -287,6 +290,7 @@ async def _summarize_thread(
         thread,
         latest_run_status=latest_run_status,
         latest_run_id=latest_run_id,
+        transcripts=transcripts,
     )
 
 
@@ -297,6 +301,14 @@ async def _summarize_threads(
     minimal_run_update: bool = False,
 ) -> list[dict[str, Any]]:
     semaphore = asyncio.Semaphore(_RUN_REFRESH_CONCURRENCY)
+    transcripts = await transcript_activity(
+        [
+            thread_id
+            for thread in threads
+            if (thread_id := _thread_id(thread))
+            and _thread_metadata(thread).get("transcript") == TRANSCRIPT_VERSION
+        ]
+    )
 
     async def summarize(thread: ThreadLike) -> dict[str, Any]:
         if not _should_refresh_latest_run(thread):
@@ -304,12 +316,14 @@ async def _summarize_threads(
                 client,
                 thread,
                 refresh_active_run=False,
+                transcripts=transcripts,
             )
         async with semaphore:
             return await _summarize_thread(
                 client,
                 thread,
                 minimal_run_update=minimal_run_update,
+                transcripts=transcripts,
             )
 
     summaries = list(await asyncio.gather(*(summarize(thread) for thread in threads)))

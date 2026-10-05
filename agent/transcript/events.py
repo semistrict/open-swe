@@ -291,6 +291,9 @@ class ToolCompleted(_Body):
     output_truncated: bool = False
     has_output: bool = False
     namespace: list[str] = Field(default_factory=list)
+    attachments: list[MessageAttachment] | None = None
+    """Images the tool returned. Their bytes ride beside the command, as a
+    message's do, so the output text never carries base64."""
 
 
 class RunNotice(_Body):

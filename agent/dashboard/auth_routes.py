@@ -70,10 +70,17 @@ async def auth_login(
     if not client_id:
         # Locally there is no App to redirect to, and the `gh` CLI already holds
         # the only credential the per-user reads need.
-        if dev_login_enabled() and not desktop:
+        if dev_login_enabled():
             return RedirectResponse(
                 "/dashboard/api/auth/dev-login?"
-                + urlencode({"redirect_to": sanitize_redirect_to(redirect_to)}),
+                + urlencode(
+                    {"redirect_to": sanitize_redirect_to(redirect_to)}
+                    | (
+                        {"desktop_handoff": desktop_handoff, "desktop_port": desktop_port}
+                        if desktop and desktop_handoff and desktop_port
+                        else {}
+                    )
+                ),
                 status_code=302,
             )
         raise HTTPException(500, "GITHUB_APP_CLIENT_ID not configured")
@@ -106,10 +113,16 @@ async def auth_login(
 
 
 @router.get("/auth/dev-login")
-async def auth_dev_login(redirect_to: str | None = None) -> Response:
+async def auth_dev_login(
+    redirect_to: str | None = None,
+    desktop_handoff: str | None = None,
+    desktop_port: int | None = Query(default=None, ge=1024, le=65535),
+) -> Response:
     """Sign in locally as the `gh` CLI's user, with no GitHub App involved.
 
     Refused outside `langgraph dev`, and still subject to the login allowlist.
+    The desktop app signs in through the user's browser, so for it this hands
+    back a code to redeem, as the GitHub callback does, instead of a cookie.
     """
     if not dev_login_enabled():
         raise HTTPException(404, "not found")
@@ -128,13 +141,23 @@ async def auth_dev_login(redirect_to: str | None = None) -> Response:
         display_name=credentials.display_name,
         avatar_url=credentials.avatar_url,
     )
+    logger.info("Signed in from the gh CLI", extra={"github_login": credentials.login})
+    challenge = valid_handoff_challenge(desktop_handoff)
+    if challenge is not None and desktop_port is not None:
+        handoff_code = issue_desktop_handoff(
+            login=credentials.login,
+            email=credentials.email or None,
+            avatar_url=credentials.avatar_url or None,
+            challenge=challenge,
+            user_id=str(signed_in.id),
+        )
+        return RedirectResponse(desktop_callback_url(desktop_port, handoff_code), status_code=302)
     session_jwt = issue_session(
         login=credentials.login,
         email=credentials.email or None,
         avatar_url=credentials.avatar_url or None,
         user_id=str(signed_in.id),
     )
-    logger.info("Signed in from the gh CLI", extra={"github_login": credentials.login})
     response = RedirectResponse(
         sanitize_redirect_to(redirect_to) or frontend_base_url(), status_code=302
     )

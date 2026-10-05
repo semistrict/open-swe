@@ -310,7 +310,23 @@ class BackendSupervisor {
     });
   }
 
+  /** Each local thread's run status (running or error; idle is absent). */
   async threadActivity() {
+    const runs = await this.threadRuns();
+    if (!runs) return null;
+    const activity = {};
+    for (const [threadId, run] of Object.entries(runs)) {
+      if (run.status) activity[threadId] = run.status;
+    }
+    return activity;
+  }
+
+  /**
+   * Each local thread's run status and when it last changed. An idle thread's
+   * last change is when its last run ended, which is how a run that started
+   * and finished between two polls is noticed.
+   */
+  async threadRuns() {
     if (!this.child || !this.port || !this.token) return {};
     try {
       const response = await this.fetch(
@@ -328,13 +344,16 @@ class BackendSupervisor {
       if (!response.ok) return null;
       const threads = await response.json();
       if (!Array.isArray(threads)) return null;
-      const activity = {};
+      const runs = {};
       for (const thread of threads) {
-        const status = THREAD_STATUS[thread?.status];
-        if (status && typeof thread.thread_id === "string")
-          activity[thread.thread_id] = status;
+        if (typeof thread?.thread_id !== "string") continue;
+        const updatedAt = Date.parse(thread.updated_at);
+        runs[thread.thread_id] = {
+          status: THREAD_STATUS[thread.status] ?? null,
+          updatedAt: Number.isFinite(updatedAt) ? updatedAt : null,
+        };
       }
-      return activity;
+      return runs;
     } catch {
       return null;
     }

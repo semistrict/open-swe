@@ -1,4 +1,6 @@
 from datetime import UTC, datetime, timedelta
+from functools import partialmethod
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -8,13 +10,20 @@ from langchain_openai.chat_models.codex import _ChatOpenAICodex  # noqa: PLC2701
 from langchain_openai.chatgpt_oauth import (
     _ChatGPTOAuthTokenProvider,  # noqa: PLC2701
     _ChatGPTToken,  # noqa: PLC2701
+    _FileChatGPTOAuthTokenProvider,  # noqa: PLC2701
 )
 
 from agent.config import ENV
 
-_BROKER_URL_ENV = "OPEN_SWE_OPENAI_OAUTH_BROKER_URL"
-_BROKER_TOKEN_ENV = "OPEN_SWE_OPENAI_OAUTH_BROKER_TOKEN"
 _BROKER_MANAGED_REFRESH_TOKEN = "managed-by-desktop-broker"
+
+
+class _ChatGPTCodexModel(_ChatOpenAICodex):
+    # Streamed Codex responses never carry the `parsed` field the json_schema default
+    # reads, so structured output (thread titles, branch names) goes through a tool call.
+    with_structured_output = partialmethod(
+        _ChatOpenAICodex.with_structured_output, method="function_calling"
+    )
 
 
 def _broker_config() -> tuple[str, str] | None:
@@ -28,8 +37,14 @@ def _broker_config() -> tuple[str, str] | None:
     return url, token
 
 
-def desktop_openai_oauth_available() -> bool:
-    return _broker_config() is not None
+def _token_file() -> Path | None:
+    raw = ENV.OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE.optional()
+    return Path(raw).expanduser() if raw else None
+
+
+def openai_oauth_available() -> bool:
+    """Whether OpenAI models run on a ChatGPT subscription instead of an API key."""
+    return _broker_config() is not None or _token_file() is not None
 
 
 class _DesktopOpenAIOAuthTokenProvider(_ChatGPTOAuthTokenProvider):
@@ -79,14 +94,26 @@ class _DesktopOpenAIOAuthTokenProvider(_ChatGPTOAuthTokenProvider):
         return (await self.aget_token()).access_token
 
 
-def build_desktop_openai_oauth_model(model_name: str, **kwargs: Any) -> BaseChatModel:
-    config = _broker_config()
-    if config is None:
-        raise ValueError("Local OpenAI credentials are unavailable")
-    provider = _DesktopOpenAIOAuthTokenProvider(*config)
-    return _ChatOpenAICodex(
+def build_openai_oauth_model(model_name: str, **kwargs: Any) -> BaseChatModel:
+    """Build a Codex model on ChatGPT OAuth, preferring the desktop app's broker.
+
+    Without a broker, tokens come from a langchain-openai token store, the format
+    Deep Agents Code also signs in to, refreshed in place under its file lock.
+    """
+    broker = _broker_config()
+    if broker is not None:
+        return _ChatGPTCodexModel(
+            model=model_name,
+            token_provider=_DesktopOpenAIOAuthTokenProvider(*broker),
+            originator="open_swe_desktop",
+            **kwargs,
+        )
+    token_file = _token_file()
+    if token_file is None:
+        raise ValueError("ChatGPT OAuth credentials are unavailable")
+    return _ChatGPTCodexModel(
         model=model_name,
-        token_provider=provider,
-        originator="open_swe_desktop",
+        token_provider=_FileChatGPTOAuthTokenProvider(path=token_file),
+        originator="open_swe",
         **kwargs,
     )

@@ -1,6 +1,17 @@
-import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query"
+import {
+  MutationCache,
+  QueryCache,
+  QueryClient,
+  notifyManager,
+} from "@tanstack/react-query"
 
 import { reportError } from "@/lib/errorReporting"
+
+// Deliver cache notifications in the task that caused them. With the default
+// `setTimeout(0)`, an optimistic `setQueryData` reaches components after any
+// state set in the same handler, so the screen shows a frame of neither: the
+// composer's Send button flashed between Stop and Stop on every send.
+notifyManager.setScheduler(queueMicrotask)
 
 type DashboardMutationMeta = {
   /** Toast title when the mutation fails, e.g. "Couldn't pin thread". */

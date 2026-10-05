@@ -22,6 +22,8 @@
 /dist
 **/dist
 .turbo/
+# bun build --compile leaves these behind when interrupted
+*.bun-build
 
 # misc
 .DS_Store
@@ -47,6 +49,7 @@ yarn-error.log*
 .env*.local
 .env
 .env.*
+!.env.example
 
 # vercel
 .vercel

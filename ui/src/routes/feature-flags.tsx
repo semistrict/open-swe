@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { ActAsApprovalPreference } from "@/features/settings/components/ActAsApprovalPreference"
 import { AssistantUiPreference } from "@/features/settings/components/AssistantUiPreference"
 import { BackgroundCallbacksPreference } from "@/features/settings/components/BackgroundCallbacksPreference"
+import { ConciergeModePreference } from "@/features/settings/components/ConciergeModePreference"
 import { HumanReviewPreference } from "@/features/settings/components/HumanReviewPreference"
 import { SandboxMemoryPreference } from "@/features/settings/components/SandboxMemoryPreference"
 import { RequireLogin } from "@/lib/auth-redirect"
@@ -38,6 +39,7 @@ function FeatureFlagsPage() {
         <AssistantUiPreference />
         <BackgroundCallbacksPreference />
         <SandboxMemoryPreference />
+        <ConciergeModePreference />
         <HumanReviewPreference />
         <ActAsApprovalPreference />
       </SettingsSection>

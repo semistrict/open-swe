@@ -4,6 +4,7 @@ import { DiffView } from "../../chat/DiffView"
 import { ChunkRenderer } from "../ChunkRenderer"
 import { MessageTimestamp } from "../MessageTimestamp"
 import { ReasoningBlock } from "../ReasoningBlock"
+import { ThinkingSpinner } from "../ThinkingSpinner"
 import {
   buildRenderItems,
   countWorkActions,
@@ -12,9 +13,10 @@ import {
 } from "../renderItems"
 import { MessageCopyButton } from "./MessageCopyButton"
 import { WorkEntryRow } from "./WorkEntryRow"
+import type { WorkEntryBody } from "./WorkEntryRow"
 import { describeWorkEntry, latestDiff } from "./workEntry"
 import { TurnFoldRow, WorkGroupToggleRow } from "./foldRows"
-import { ShellEntryBody } from "./entryBodies"
+import { ShellEntryBody, ToolImagesBody } from "./entryBodies"
 import type { ReactNode } from "react"
 import type { RenderItem } from "../renderItems"
 import type { ApprovalCallbacks } from "../types"
@@ -56,6 +58,15 @@ function EditWorkEntry({
   )
 }
 
+/** The expanded body of a tool row whose result has images; the row's text fallback otherwise. */
+function toolResultBody(chunk: ToolExecutionChunk): WorkEntryBody | undefined {
+  const { images } = chunk
+  if (!images?.length) return undefined
+  return ({ loadedText }) => (
+    <ToolImagesBody images={images} output={loadedText ?? chunk.output} />
+  )
+}
+
 /**
  * A run of related tool calls (exploration, mostly). Collapsed, it shows only
  * the most recent entries plus a toggle for the rest.
@@ -90,6 +101,7 @@ function WorkGroup({
           key={chunk.toolCallId || `work-${index}`}
           entry={describeWorkEntry(chunk, repoPath)}
           timestamp={chunk.timestamp}
+          body={toolResultBody(chunk)}
         />
       ))}
     </div>
@@ -177,7 +189,10 @@ export function AgentTurn({
         .trim(),
     [replyItems]
   )
-  const canFoldWork = !!isStreaming || workItems.length > 0
+  const canFoldWork = workItems.length > 0
+  // A plain reply has nothing to fold: until its text arrives it shows the same
+  // indicator the thread showed before the turn existed, and the text replaces it.
+  const awaitingReply = !!isStreaming && !canFoldWork && replyItems.length === 0
   const [workFoldExpanded, setWorkFoldExpanded] = useState(false)
   const toggleWorkFold = useCallback(
     () => setWorkFoldExpanded((value) => !value),
@@ -263,6 +278,7 @@ export function AgentTurn({
             key={item.key}
             entry={describeWorkEntry(item.chunk, repoPath)}
             timestamp={item.chunk.timestamp}
+            body={toolResultBody(item.chunk)}
           />
         )
 
@@ -282,9 +298,16 @@ export function AgentTurn({
     }
   }
 
-  const workLabel =
+  const elapsed =
     workDurationMs && workDurationMs >= 1000
-      ? `Worked for ${formatElapsed(workDurationMs)}`
+      ? formatElapsed(workDurationMs)
+      : null
+  const workLabel = message.stopped
+    ? elapsed
+      ? `Stopped after ${elapsed}`
+      : "Stopped"
+    : elapsed
+      ? `Worked for ${elapsed}`
       : "Worked"
   const foldLabel = isStreaming ? (activityLabel ?? "Working…") : workLabel
   const foldLabelWithCount =
@@ -292,11 +315,7 @@ export function AgentTurn({
       ? `${foldLabel} · ${actionCount} action${actionCount === 1 ? "" : "s"}`
       : foldLabel
   const visibleItems =
-    canFoldWork && workFoldExpanded
-      ? renderItems
-      : isStreaming || canFoldWork
-        ? collapsedItems
-        : renderItems
+    canFoldWork && !workFoldExpanded ? collapsedItems : renderItems
   const workItemKeys = new Set(workItems.map((item) => item.key))
   const firstWorkIndex = renderItems.findIndex((item) =>
     workItemKeys.has(item.key)
@@ -328,8 +347,10 @@ export function AgentTurn({
         .map((item, index) =>
           renderItem(item, foldIndex + index, visibleItems.length)
         )}
+      <ThinkingSpinner isActive={awaitingReply} label={activityLabel} />
 
-      <div className="mt-1 flex items-center gap-1">
+      {/* Sized for the copy button, which only appears once the turn ends. */}
+      <div className="mt-1 flex min-h-5 items-center gap-1">
         {replyText && !isStreaming && (
           <MessageCopyButton
             className="opacity-0 transition-opacity duration-200 group-hover/turn:opacity-100 focus-visible:opacity-100"
@@ -341,6 +362,10 @@ export function AgentTurn({
             timestamp={message.timestamp}
             startedAt={message.startedAt}
           />
+        )}
+        {/* A turn with work says so on its fold row instead. */}
+        {message.stopped && !canFoldWork && (
+          <span className="text-[11px] text-muted-foreground">Stopped</span>
         )}
       </div>
     </div>

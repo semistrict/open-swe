@@ -56,6 +56,7 @@ from agent.transcript.events import (
     MessageCompleted,
     MessageSender,
     MessageUsage,
+    NoticeKind,
     RunNotice,
     ThreadCreated,
     ToolCompleted,
@@ -66,6 +67,7 @@ from agent.transcript.events import (
     TurnRequested,
     TurnStarted,
 )
+from agent.transcript.turns import message_recorded
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +175,7 @@ class RunState:
     seen_human_ids: set[str] = field(default_factory=set)
     buffers: dict[str, MessageBuffers] = field(default_factory=dict)
     message_alias: dict[str, str] = field(default_factory=dict)
-    offloading_notice: JsonObject | None = None
+    notices: dict[NoticeKind, JsonObject] = field(default_factory=dict)
     queue: asyncio.Queue[Command] | None = None
     writer: asyncio.Task[None] | None = None
     terminal: bool = False
@@ -333,16 +335,24 @@ def _image_bytes(block: Mapping[str, object]) -> tuple[str, bytes] | None:
 def _human_attachments(
     message: HumanMessage, message_id: str
 ) -> tuple[list[MessageAttachment], tuple[PendingAttachment, ...]]:
-    """Files on a human message, as event metadata plus the bytes to store.
-
-    Only standard base64 image blocks are captured; a remote-URL image is
-    referenced rather than copied, and anything else is skipped with a log.
-    """
+    """Files on a human message, as event metadata plus the bytes to store."""
     try:
         blocks = message.content_blocks
     except Exception:
         logger.debug("Could not read content blocks for attachments", exc_info=True)
         return [], ()
+    return _image_attachments(blocks, message_id)
+
+
+def _image_attachments(
+    blocks: Sequence[object], owner_id: str
+) -> tuple[list[MessageAttachment], tuple[PendingAttachment, ...]]:
+    """The image blocks among ``blocks``, as event metadata plus the bytes to store.
+
+    ``owner_id`` keys the bytes: the message, or the tool call that returned
+    them. Only standard base64 image blocks are captured; a remote-URL image is
+    referenced rather than copied, and anything else is skipped with a log.
+    """
     attachments: list[MessageAttachment] = []
     pending: list[PendingAttachment] = []
     for block in blocks:
@@ -356,7 +366,7 @@ def _human_attachments(
             else:
                 logger.warning(
                     "Skipping a transcript attachment with no bytes and no url",
-                    extra={"transcript": {"message_id": message_id}},
+                    extra={"transcript": {"message_id": owner_id}},
                 )
             continue
         mime_type, data = decoded
@@ -366,7 +376,7 @@ def _human_attachments(
             pending.append(
                 PendingAttachment(
                     attachment_id=attachment_id,
-                    message_id=message_id,
+                    message_id=owner_id,
                     position=len(attachments),
                     mime_type=mime_type,
                     file_name=file_name if isinstance(file_name, str) else None,
@@ -377,7 +387,7 @@ def _human_attachments(
             logger.warning(
                 "Skipping an unsupported transcript attachment",
                 exc_info=True,
-                extra={"transcript": {"message_id": message_id, "mime_type": mime_type}},
+                extra={"transcript": {"message_id": owner_id, "mime_type": mime_type}},
             )
             continue
         attachments.append(
@@ -390,12 +400,29 @@ def _human_attachments(
     return attachments, tuple(pending)
 
 
-def _tool_output(content: object) -> tuple[str, bool]:
+@dataclass(frozen=True)
+class _ToolOutput:
+    """What a tool returned, as the transcript keeps it."""
+
+    text: str
+    truncated: bool
+    attachments: list[MessageAttachment] = field(default_factory=list)
+    pending: tuple[PendingAttachment, ...] = ()
+
+
+def _tool_output(content: object, tool_call_id: str) -> _ToolOutput:
+    """The output text, capped, and any images, stored as attachments."""
+    blocks = (
+        content if isinstance(content, list) else [content] if isinstance(content, dict) else []
+    )
+    attachments, pending = _image_attachments(blocks, tool_call_id)
     if isinstance(content, str):
         text = content
     elif isinstance(content, (list, dict)):
         parts: list[str] = []
-        for block in content if isinstance(content, list) else [content]:
+        for block in blocks:
+            if isinstance(block, Mapping) and block.get("type") == "image":
+                continue
             if isinstance(block, Mapping) and isinstance(block.get("text"), str):
                 parts.append(cast(str, block["text"]))
             else:
@@ -404,9 +431,10 @@ def _tool_output(content: object) -> tuple[str, bool]:
     else:
         text = str(content)
     encoded = text.encode("utf-8", "replace")
-    if len(encoded) <= TOOL_OUTPUT_CAP_BYTES:
-        return text, False
-    return encoded[:TOOL_OUTPUT_CAP_BYTES].decode("utf-8", "ignore"), True
+    truncated = len(encoded) > TOOL_OUTPUT_CAP_BYTES
+    if truncated:
+        text = encoded[:TOOL_OUTPUT_CAP_BYTES].decode("utf-8", "ignore")
+    return _ToolOutput(text, truncated, attachments, pending)
 
 
 class _DeltaHandler(AsyncCallbackHandler):
@@ -702,7 +730,19 @@ class TranscriptMiddleware(OpenSWEMiddleware):
         _runs[key] = run_state
 
         commands: list[Command] = []
-        if (not transcribed or ids.turn_id is None) and human is not None:
+        # A run that brings no turn of its own requests one for its message. A
+        # follow-up drained from the queue brings none either, but its message is
+        # injected later: the newest human in state then already belongs to an
+        # earlier turn, and requesting it again would show it twice.
+        if (
+            human is not None
+            and (not transcribed or ids.turn_id is None)
+            and not (
+                transcribed
+                and isinstance(human.id, str)
+                and await message_recorded(ids.thread_id, human.id)
+            )
+        ):
             commands.append(_turn_requested(run_state, human, ids, metadata))
         commands.append(
             Command(
@@ -744,7 +784,12 @@ class TranscriptMiddleware(OpenSWEMiddleware):
                 # A subagent's own first message is the task prompt, not
                 # something a person said, and its offloading is the parent's.
                 self._record_injected_humans(state, request)
-                self._record_offloading(state, request)
+                self._record_notice(
+                    state,
+                    "conversation_offloading",
+                    request.state.get("conversation_offloading"),
+                )
+                self._record_notice(state, "model_routed", request.state.get("routed_model"))
         except Exception:
             logger.warning("Transcript pre-model bookkeeping failed", exc_info=True)
 
@@ -808,29 +853,23 @@ class TranscriptMiddleware(OpenSWEMiddleware):
                 )
             )
 
-    def _record_offloading(self, state: RunState, request: ModelRequest) -> None:
-        """Persist the offloading hint the summarizer already wrote into state.
+    def _record_notice(self, state: RunState, kind: NoticeKind, value: object) -> None:
+        """Persist a run hint another middleware already mirrored onto state.
 
-        ``ConversationOffloadingMiddleware`` streams its status through
-        ``get_stream_writer`` and mirrors it onto ``state``; reading it here
-        keeps that middleware untouched.
+        Those middlewares stream their hint through ``get_stream_writer``, which
+        only SDK-streamed threads read; recording it from state keeps them
+        untouched. A hint is recorded again only when it changes.
         """
-        status = request.state.get("conversation_offloading")
-        if not isinstance(status, Mapping):
+        if not isinstance(value, Mapping):
             return
-        payload = _json_object(status)
-        if state.offloading_notice == payload:
+        payload = _json_object(value)
+        if state.notices.get(kind) == payload:
             return
-        state.offloading_notice = payload
+        state.notices[kind] = payload
         state.enqueue(
             Command(
                 command_id=str(uuid.uuid7()),
-                event=RunNotice(
-                    type="run.notice",
-                    turn_id=state.turn_id,
-                    kind="conversation_offloading",
-                    data=payload,
-                ),
+                event=RunNotice(type="run.notice", turn_id=state.turn_id, kind=kind, data=payload),
                 actor_kind="agent",
                 run_id=state.run_id,
                 turn_id=state.turn_id,
@@ -937,7 +976,7 @@ class TranscriptMiddleware(OpenSWEMiddleware):
                 tool_call_id,
                 namespace,
                 "error",
-                *_tool_output(f"{type(exc).__name__}: {exc}"),
+                _tool_output(f"{type(exc).__name__}: {exc}", tool_call_id),
             )
             raise
         finally:
@@ -951,8 +990,7 @@ class TranscriptMiddleware(OpenSWEMiddleware):
         tool_call_id: str,
         namespace: list[str],
         status: Literal["completed", "error"],
-        text: str,
-        truncated: bool,
+        output: _ToolOutput,
     ) -> None:
         try:
             state.enqueue(
@@ -963,15 +1001,17 @@ class TranscriptMiddleware(OpenSWEMiddleware):
                         turn_id=state.turn_id,
                         tool_call_id=tool_call_id,
                         status=status,
-                        output_preview=text[:TOOL_OUTPUT_PREVIEW_CHARS] or None,
-                        output_truncated=truncated,
-                        has_output=bool(text),
+                        output_preview=output.text[:TOOL_OUTPUT_PREVIEW_CHARS] or None,
+                        output_truncated=output.truncated,
+                        has_output=bool(output.text),
                         namespace=namespace,
+                        attachments=output.attachments or None,
                     ),
                     actor_kind="agent",
                     run_id=state.run_id,
                     turn_id=state.turn_id,
-                    tool_output=text,
+                    tool_output=output.text,
+                    attachments=output.pending,
                 )
             )
         except Exception:
@@ -1139,8 +1179,8 @@ def _json_object(value: object) -> JsonObject:
 
 def _result_output(
     result: ToolMessage | GraphCommand[Any], tool_call_id: str
-) -> tuple[Literal["completed", "error"], str, bool]:
-    """The tool's status, its capped output text, and whether capping cut it."""
+) -> tuple[Literal["completed", "error"], _ToolOutput]:
+    """The tool's status and what it returned."""
     if isinstance(result, ToolMessage):
         message: ToolMessage | None = result
     else:
@@ -1155,9 +1195,9 @@ def _result_output(
             None,
         )
     if message is None:
-        return "completed", "", False
+        return "completed", _ToolOutput("", False)
     status: Literal["completed", "error"] = "error" if message.status == "error" else "completed"
-    return status, *_tool_output(message.content)
+    return status, _tool_output(message.content, tool_call_id)
 
 
 def _attach(handler: AsyncCallbackHandler) -> CallbackManager | AsyncCallbackManager | None:

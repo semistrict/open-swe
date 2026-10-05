@@ -1,6 +1,7 @@
 """Transcript middleware: paragraph batching and the emitted event sequence."""
 
 import asyncio
+import base64
 import itertools
 from collections.abc import Sequence
 from typing import Any
@@ -63,6 +64,11 @@ def _install(
         return transcribed
 
     monkeypatch.setattr(mw, "_has_transcript", _has_transcript)
+
+    async def message_recorded(thread_id: str, message_id: str) -> bool:
+        return False
+
+    monkeypatch.setattr(mw, "message_recorded", message_recorded)
     configurable: dict[str, Any] = {"thread_id": THREAD_ID, "run_id": RUN_ID}
     if turn_id is not None:
         configurable["transcript_turn_id"] = str(turn_id)
@@ -146,6 +152,94 @@ async def test_hook_sequence_for_a_transcribed_turn(monkeypatch: pytest.MonkeyPa
     assert completed.event.has_output is True
     assert completed.event.output_truncated is False
     assert completed.tool_output == "file body"
+
+
+async def test_the_model_auto_routed_to_is_recorded_once_per_change(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _install(monkeypatch, transcribed=True, turn_id=uuid7())
+    middleware = mw.TranscriptMiddleware()
+    human = HumanMessage(content="do the thing", id="human-1")
+    await middleware.abefore_agent({"messages": [human]}, None)
+    routed = {"route": "fast", "model_id": "openai:gpt-6-luna"}
+
+    async def model_handler(request: ModelRequest) -> ModelResponse:
+        return ModelResponse(result=[AIMessage(content="ok", id=f"ai-{uuid7()}")])
+
+    for _ in range(2):
+        await middleware.awrap_model_call(
+            _model_request([human], {"messages": [human], "routed_model": routed}),
+            model_handler,
+        )
+    await middleware.aafter_agent({"messages": [human]}, None)
+
+    notices = [command.event for command in engine.commands if command.event.type == "run.notice"]
+    assert [(notice.kind, notice.data) for notice in notices] == [("model_routed", routed)]
+
+
+@pytest.mark.parametrize(
+    ("recorded", "expected"),
+    [
+        (True, ["turn.started", "turn.completed"]),
+        (False, ["turn.requested", "turn.started", "turn.completed"]),
+    ],
+)
+async def test_a_run_without_a_turn_requests_one_only_for_a_new_message(
+    monkeypatch: pytest.MonkeyPatch, recorded: bool, expected: list[str]
+) -> None:
+    """A follow-up drained from the queue starts on history; a run started elsewhere brings its ask."""
+    engine = _install(monkeypatch, transcribed=True)
+
+    async def message_recorded(thread_id: str, message_id: str) -> bool:
+        assert (thread_id, message_id) == (THREAD_ID, "human-2")
+        return recorded
+
+    monkeypatch.setattr(mw, "message_recorded", message_recorded)
+    history = [
+        HumanMessage(content="first ask", id="human-1"),
+        AIMessage(content="done", id="ai-1"),
+        HumanMessage(content="second ask", id="human-2"),
+    ]
+
+    middleware = mw.TranscriptMiddleware()
+    await middleware.abefore_agent({"messages": history}, None)
+    await middleware.aafter_agent({"messages": history}, None)
+
+    assert engine.types == expected
+
+
+async def test_an_image_a_tool_returns_is_an_attachment_not_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _install(monkeypatch, transcribed=True, turn_id=uuid7())
+    middleware = mw.TranscriptMiddleware()
+    human = HumanMessage(content="look at the screenshot", id="human-1")
+    await middleware.abefore_agent({"messages": [human]}, None)
+    png = b"\x89PNG\r\n\x1a\n"
+
+    async def tool_handler(request: ToolCallRequest) -> ToolMessage:
+        return ToolMessage(
+            content_blocks=[
+                {
+                    "type": "image",
+                    "base64": base64.b64encode(png).decode(),
+                    "mime_type": "image/png",
+                }
+            ],
+            tool_call_id="call-1",
+        )
+
+    await middleware.awrap_tool_call(_tool_request("call-1", {"messages": [human]}), tool_handler)
+    await middleware.aafter_agent({"messages": [human]}, None)
+
+    completed = next(c for c in engine.commands if c.event.type == "tool.completed")
+    assert completed.event.output_preview is None
+    assert completed.event.has_output is False
+    assert completed.event.attachments is not None
+    assert [(a.mime_type, a.attachment_id) for a in completed.event.attachments] == [
+        ("image/png", completed.attachments[0].attachment_id)
+    ]
+    assert [(p.message_id, p.data) for p in completed.attachments] == [("call-1", png)]
 
 
 async def test_only_mid_run_human_messages_are_recorded_once(

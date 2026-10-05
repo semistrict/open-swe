@@ -470,6 +470,10 @@ ENV.var(
     "Token authenticating to the OpenAI OAuth broker.",
     secret=True,
 )
+ENV.var(
+    "OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE",
+    "ChatGPT OAuth token store (langchain-openai format) for OpenAI models without an API key.",
+)
 ENV.var("BG_JOB_ISOLATED_LOOPS", "LangGraph background-job event-loop isolation flag.")
 ENV.var("DEBUG_TRACEMALLOC", "Start tracemalloc to attribute unclosed-session warnings.")
 ENV.var("DEBUG_TRACEMALLOC_FRAMES", "Frames tracemalloc records per allocation.", default="25")

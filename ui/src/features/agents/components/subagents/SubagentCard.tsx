@@ -5,7 +5,7 @@ import { ArrowUpRight, Bot, Loader2 } from "lucide-react"
 import { SubagentActivity } from "./SubagentActivity"
 import type { ToolExecutionChunk } from "@/features/agents/lib/types"
 import { useIsInAgentThreadStream } from "@/features/agents/lib/provider/useIsInAgentThreadStream"
-import { useOptionalThreadSource } from "@/features/agents/lib/threadSource/ThreadSourceProvider"
+import { useOptionalThreadSource } from "@/features/agents/lib/threadSource/context"
 
 /** Coerce an unknown tool-argument value to a trimmed string, or `""`. */
 export function asString(value: unknown): string {

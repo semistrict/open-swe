@@ -12,6 +12,7 @@ import { useQuery } from "@tanstack/react-query"
 import { AgentsShell } from "@/features/agents/components/AgentsSidebar"
 import { reviewChatQuery } from "@/features/agents/lib/queries"
 import { Skeleton } from "@/components/ui/skeleton"
+import { PaneSkeleton } from "@/features/agents/components/PaneSkeleton"
 import { useExperimentalAssistantUi, useProfile } from "@/lib/profile"
 import { RequireLogin } from "@/lib/auth-redirect"
 import { useSession } from "@/lib/session"
@@ -143,13 +144,7 @@ function AgentsLayout() {
       activeThreadId={activeThreadId ?? activeReviewThreadId}
       activeLocalSessionId={activeLocalSessionId}
     >
-      {awaitingRuntimeChoice ? (
-        <main className="flex min-w-0 flex-1 items-center justify-center p-6">
-          <Skeleton className="h-40 w-full max-w-md" />
-        </main>
-      ) : (
-        <Outlet />
-      )}
+      {awaitingRuntimeChoice ? <PaneSkeleton /> : <Outlet />}
     </AgentsShell>
   )
 }

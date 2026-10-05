@@ -19,12 +19,22 @@ import {
   StackIcon,
 } from "@phosphor-icons/react"
 import { Radar } from "lucide-react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 
 import type { DesktopUpdateState } from "@/desktop"
 import { api, type SessionUser } from "@/lib/api"
 import { useProfile } from "@/lib/profile"
+import { useSession } from "@/lib/session"
 import type {
   PullRequestSnapshot,
   SidebarRepo,
@@ -93,6 +103,7 @@ import {
   useRefreshLocalThreads,
 } from "@/features/agents/lib/desktopLocal"
 import { useDesktopProjects } from "@/features/agents/lib/desktopProjects"
+import { useNoticeableWait } from "@/features/agents/lib/useNoticeableWait"
 import {
   applyRepoKeyAliases,
   cloudSidebarThread,
@@ -206,19 +217,38 @@ export function AgentsSidebar({
   const navigate = useNavigate()
   const chat = useChatRoutes()
   const profile = useProfile()
+  const session = useSession()
+  // Whether Concierge shows depends on the profile, which waits on the session.
+  const conciergeUnknown =
+    !localOnly &&
+    (session.isPending || (session.data != null && profile.isPending))
+  const queryClient = useQueryClient()
+  const conciergeKey = ["concierge", user?.login]
   const concierge = useQuery({
-    queryKey: ["concierge", user?.login],
+    queryKey: conciergeKey,
     queryFn: api.concierge,
     enabled: !localOnly && !!user && !!profile.data?.concierge_mode,
     refetchInterval: 30_000,
   })
+  const conciergeThreadId = concierge.data?.thread_id ?? null
+  // The first open creates the conversation, so it works before any Slack DM.
+  const openConcierge = useMutation({
+    mutationFn: api.openConcierge,
+    onSuccess: (opened) => {
+      queryClient.setQueryData(conciergeKey, opened)
+      if (opened.thread_id)
+        void navigate({
+          to: chat.thread,
+          params: { threadId: opened.thread_id },
+        })
+    },
+  }).mutate
   const {
     viewport: scrollViewport,
     edges: scrollEdges,
     measure: measureScrollEdges,
   } = useScrollEdges()
   const { openPalette } = useAppCommandControls()
-  const queryClient = useQueryClient()
   const openThread = useCallback(
     (threadId: string) => {
       const review = queryClient.getQueryData<AgentThread>(
@@ -404,7 +434,11 @@ export function AgentsSidebar({
     ...alignedLocalItems.filter((item) => localPinnedIds.has(item.id)),
   ]
   const threadItems: Array<SidebarThreadItem> = [
-    ...recentThreads.map(cloudSidebarThread),
+    // Concierge has its own entry at the top; listing it again here showed it
+    // twice, both selected while it was open.
+    ...recentThreads
+      .filter((thread) => thread.id !== conciergeThreadId)
+      .map(cloudSidebarThread),
     ...(repoMode
       ? []
       : alignedLocalItems.filter((item) => !localPinnedIds.has(item.id))),
@@ -701,6 +735,7 @@ export function AgentsSidebar({
     recentsQuery.isError ||
     (repoMode && sidebarReposQuery.isError)
   const sourcesLoading = cloudPending || (isDesktop && localThreads.isPending)
+  const firstLoad = useFirstLoadGate(sourcesLoading)
   const isEmpty =
     !cloudPending &&
     (!isDesktop || !localThreads.isPending) &&
@@ -754,31 +789,41 @@ export function AgentsSidebar({
           New Thread
         </Link>
         {!localOnly && profile.data?.concierge_mode && (
-          <a
-            href={
-              concierge.data?.thread_id
-                ? `${chat.home}/${concierge.data.thread_id}`
-                : concierge.data?.channel_id
-                  ? `slack://channel?id=${concierge.data.channel_id}`
-                  : undefined
-            }
-            onClick={layout.closeOnMobile}
+          <Link
+            to={conciergeThreadId ? chat.thread : chat.home}
+            params={{ threadId: conciergeThreadId ?? "" }}
+            onClick={(event) => {
+              layout.closeOnMobile()
+              if (conciergeThreadId) return
+              event.preventDefault()
+              openConcierge()
+            }}
             aria-current={
-              !!concierge.data?.thread_id &&
-              activeThreadId === concierge.data.thread_id
+              conciergeThreadId && activeThreadId === conciergeThreadId
                 ? "page"
                 : undefined
             }
             className={cn(
               "flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-sidebar-row-hover",
-              !!concierge.data?.thread_id &&
-                activeThreadId === concierge.data.thread_id &&
+              conciergeThreadId &&
+                activeThreadId === conciergeThreadId &&
                 "bg-sidebar-row-active"
             )}
           >
             <ChatCircleIcon className="size-4" />
             Concierge
-          </a>
+          </Link>
+        )}
+        {conciergeUnknown && (
+          // Holds Concierge's row until the profile says whether to show it,
+          // so the items below don't drop a row when it arrives.
+          <div
+            aria-hidden
+            className="invisible flex w-full items-center gap-2.5 px-2.5 py-1.5 text-sm font-medium"
+          >
+            <ChatCircleIcon className="size-4" />
+            Concierge
+          </div>
         )}
       </div>
 
@@ -830,7 +875,8 @@ export function AgentsSidebar({
                 })}
               </nav>
             )}
-            {sourcesLoading && allItems.length === 0 && (
+            {(firstLoad.pending ||
+              (sourcesLoading && allItems.length === 0)) && (
               <ThreadListSkeleton compact={prefs.compact} />
             )}
             {cloudError && (
@@ -849,146 +895,164 @@ export function AgentsSidebar({
                 onRetry={() => void localThreads.refetch()}
               />
             )}
-            {sourcesLoading && allItems.length > 0 && (
+            {sourcesLoading && !firstLoad.pending && allItems.length > 0 && (
               <div className="flex items-center gap-1.5 px-2.5 py-2 text-xs text-muted-foreground/70">
                 <CircleNotchIcon className="size-3.5 animate-spin" />
                 Loading threads…
               </div>
             )}
 
-            {(filteredPinnedItems.length > 0 ||
-              pinnedGroups.length > 0 ||
-              (repoMode && noRepoPinned && noRepoAvailable)) && (
-              <section className="mb-3">
-                <SidebarSectionHeader
-                  label="Pinned"
-                  collapsed={sectionCollapsed("pinned")}
-                  onToggleCollapsed={() => toggleSectionCollapsed("pinned")}
-                  menu={
-                    <SidebarSectionMenu label="Pinned options">
-                      <MenuGroup>
-                        <MenuGroupLabel>Sort pinned by</MenuGroupLabel>
-                        <MenuRadioGroup
-                          value={prefs.sortPinned}
-                          onValueChange={(value) =>
-                            setView({ sortPinned: value as PinnedSort })
-                          }
-                        >
-                          <MenuRadioItem value="updated">
-                            Last updated
-                          </MenuRadioItem>
-                          <MenuRadioItem value="manual">
-                            Manual order
-                          </MenuRadioItem>
-                        </MenuRadioGroup>
-                      </MenuGroup>
-                    </SidebarSectionMenu>
-                  }
-                />
-                {!sectionCollapsed("pinned") && (
-                  <>
-                    {filteredPinnedItems.map((item) => (
-                      <SidebarThreadRow key={item.key} {...rowProps(item)} />
-                    ))}
-                    {pinnedGroups.map(renderRepoGroup)}
-                    {repoMode &&
-                      noRepoPinned &&
-                      noRepoAvailable &&
-                      renderRepoGroup(noRepoGroup)}
-                  </>
-                )}
-              </section>
-            )}
-
-            {repoMode &&
-              (unpinnedGroups.length > 0 || noRepoAvailable || isDesktop) && (
-                <section className="mb-3">
-                  <SidebarSectionHeader
-                    label={workspaceMode ? "Workspaces" : "Repositories"}
-                    collapsed={sectionCollapsed("repos")}
-                    onToggleCollapsed={() => toggleSectionCollapsed("repos")}
-                    menu={
-                      <SidebarSectionMenu label="Repositories options">
-                        {viewMenuItems}
-                        {removeProjectItems}
-                      </SidebarSectionMenu>
-                    }
-                    action={
-                      isDesktop ? (
-                        <SidebarSectionAction
-                          label="Add repository"
-                          icon={<PlusIcon className="size-4" />}
-                          onClick={() => void addLocalRepo()}
-                        />
-                      ) : undefined
-                    }
-                  />
-                  {!sectionCollapsed("repos") && (
-                    <>
-                      {workspaceMode
-                        ? workspaceGroups.map((workspace) => (
-                            <WorkspaceGroupSection
-                              key={workspace.slug}
-                              workspace={workspace}
-                              collapsed={sectionCollapsed(
-                                `workspace:${workspace.slug}`
-                              )}
-                              onToggleCollapsed={() =>
-                                toggleSectionCollapsed(
-                                  `workspace:${workspace.slug}`
-                                )
+            {/* Mounted while hidden so each repository group fetches its page,
+                then revealed in one step once all of them have one. */}
+            <div className={firstLoad.pending ? "hidden" : "contents"}>
+              <FirstLoadContext value={firstLoad.report}>
+                {(filteredPinnedItems.length > 0 ||
+                  pinnedGroups.length > 0 ||
+                  (repoMode && noRepoPinned && noRepoAvailable)) && (
+                  <section className="mb-3">
+                    <SidebarSectionHeader
+                      label="Pinned"
+                      collapsed={sectionCollapsed("pinned")}
+                      onToggleCollapsed={() => toggleSectionCollapsed("pinned")}
+                      menu={
+                        <SidebarSectionMenu label="Pinned options">
+                          <MenuGroup>
+                            <MenuGroupLabel>Sort pinned by</MenuGroupLabel>
+                            <MenuRadioGroup
+                              value={prefs.sortPinned}
+                              onValueChange={(value) =>
+                                setView({ sortPinned: value as PinnedSort })
                               }
-                              renderRepoGroup={renderRepoGroup}
-                            />
-                          ))
-                        : unpinnedGroups.map(renderRepoGroup)}
-                      {!noRepoPinned &&
-                        noRepoAvailable &&
-                        renderRepoGroup(noRepoGroup)}
-                    </>
-                  )}
-                </section>
-              )}
-
-            {!repoMode && (
-              <section className="mb-3">
-                <SidebarSectionHeader
-                  label="Recents"
-                  collapsed={sectionCollapsed("recents")}
-                  onToggleCollapsed={() => toggleSectionCollapsed("recents")}
-                  menu={
-                    <SidebarSectionMenu label="Recents options">
-                      {viewMenuItems}
-                    </SidebarSectionMenu>
-                  }
-                  action={
-                    <SidebarSectionAction
-                      label="New thread"
-                      icon={<NotePencilIcon className="size-4" />}
-                      onClick={() => {
-                        layout.closeOnMobile()
-                        void navigate({ to: chat.home })
-                      }}
+                            >
+                              <MenuRadioItem value="updated">
+                                Last updated
+                              </MenuRadioItem>
+                              <MenuRadioItem value="manual">
+                                Manual order
+                              </MenuRadioItem>
+                            </MenuRadioGroup>
+                          </MenuGroup>
+                        </SidebarSectionMenu>
+                      }
                     />
-                  }
-                />
-                {!sectionCollapsed("recents") && (
-                  <>
-                    {recents.map((item) => (
-                      <SidebarThreadRow key={item.key} {...rowProps(item)} />
-                    ))}
-                    {recentsQuery.hasMore && (
-                      <LoadMoreThreadsOnScroll
-                        label="Load more threads"
-                        root={scrollViewport}
-                        loading={recentsQuery.isFetchingNextPage}
-                        onLoadMore={recentsQuery.fetchNextPage}
-                      />
+                    {!sectionCollapsed("pinned") && (
+                      <>
+                        {filteredPinnedItems.map((item) => (
+                          <SidebarThreadRow
+                            key={item.key}
+                            {...rowProps(item)}
+                          />
+                        ))}
+                        {pinnedGroups.map(renderRepoGroup)}
+                        {repoMode &&
+                          noRepoPinned &&
+                          noRepoAvailable &&
+                          renderRepoGroup(noRepoGroup)}
+                      </>
                     )}
-                  </>
+                  </section>
                 )}
-              </section>
-            )}
+
+                {repoMode &&
+                  (unpinnedGroups.length > 0 ||
+                    noRepoAvailable ||
+                    isDesktop) && (
+                    <section className="mb-3">
+                      <SidebarSectionHeader
+                        label={workspaceMode ? "Workspaces" : "Repositories"}
+                        collapsed={sectionCollapsed("repos")}
+                        onToggleCollapsed={() =>
+                          toggleSectionCollapsed("repos")
+                        }
+                        menu={
+                          <SidebarSectionMenu label="Repositories options">
+                            {viewMenuItems}
+                            {removeProjectItems}
+                          </SidebarSectionMenu>
+                        }
+                        action={
+                          isDesktop ? (
+                            <SidebarSectionAction
+                              label="Add repository"
+                              icon={<PlusIcon className="size-4" />}
+                              onClick={() => void addLocalRepo()}
+                            />
+                          ) : undefined
+                        }
+                      />
+                      {!sectionCollapsed("repos") && (
+                        <>
+                          {workspaceMode
+                            ? workspaceGroups.map((workspace) => (
+                                <WorkspaceGroupSection
+                                  key={workspace.slug}
+                                  workspace={workspace}
+                                  collapsed={sectionCollapsed(
+                                    `workspace:${workspace.slug}`
+                                  )}
+                                  onToggleCollapsed={() =>
+                                    toggleSectionCollapsed(
+                                      `workspace:${workspace.slug}`
+                                    )
+                                  }
+                                  renderRepoGroup={renderRepoGroup}
+                                />
+                              ))
+                            : unpinnedGroups.map(renderRepoGroup)}
+                          {!noRepoPinned &&
+                            noRepoAvailable &&
+                            renderRepoGroup(noRepoGroup)}
+                        </>
+                      )}
+                    </section>
+                  )}
+
+                {!repoMode && (
+                  <section className="mb-3">
+                    <SidebarSectionHeader
+                      label="Recents"
+                      collapsed={sectionCollapsed("recents")}
+                      onToggleCollapsed={() =>
+                        toggleSectionCollapsed("recents")
+                      }
+                      menu={
+                        <SidebarSectionMenu label="Recents options">
+                          {viewMenuItems}
+                        </SidebarSectionMenu>
+                      }
+                      action={
+                        <SidebarSectionAction
+                          label="New thread"
+                          icon={<NotePencilIcon className="size-4" />}
+                          onClick={() => {
+                            layout.closeOnMobile()
+                            void navigate({ to: chat.home })
+                          }}
+                        />
+                      }
+                    />
+                    {!sectionCollapsed("recents") && (
+                      <>
+                        {recents.map((item) => (
+                          <SidebarThreadRow
+                            key={item.key}
+                            {...rowProps(item)}
+                          />
+                        ))}
+                        {recentsQuery.hasMore && (
+                          <LoadMoreThreadsOnScroll
+                            label="Load more threads"
+                            root={scrollViewport}
+                            loading={recentsQuery.isFetchingNextPage}
+                            onLoadMore={recentsQuery.fetchNextPage}
+                          />
+                        )}
+                      </>
+                    )}
+                  </section>
+                )}
+              </FirstLoadContext>
+            </div>
             {isEmpty && !cloudError && !localThreads.isError && (
               <p className="px-2.5 py-6 text-center text-xs text-muted-foreground/70">
                 {hasActiveFilters(prefs.filters)
@@ -1086,6 +1150,54 @@ function WorkspaceGroupSection({
   )
 }
 
+type ReportFirstLoad = (key: string, pending: boolean) => void
+
+const FirstLoadContext = createContext<ReportFirstLoad | null>(null)
+
+/**
+ * Holds the sidebar's thread sections back until their first load is whole.
+ * Repository groups fetch their first page only once the repository list is
+ * in, so revealing sections as data arrived showed a group with just the open
+ * thread, then grew it, pushing every group below down. Each group reports
+ * whether its first page is pending; the sections appear together once
+ * nothing is, and are never hidden again after that.
+ */
+function useFirstLoadGate(sourcesLoading: boolean): {
+  pending: boolean
+  report: ReportFirstLoad
+} {
+  const [pendingKeys, setPendingKeys] = useState<ReadonlySet<string>>(
+    () => new Set()
+  )
+  // Group effects run before this component's, so the latch below reads the
+  // reports from this same commit through the ref, not last render's state.
+  const pendingRef = useRef<Set<string>>(new Set())
+  const [revealed, setRevealed] = useState(false)
+  const report = useCallback<ReportFirstLoad>((key, pending) => {
+    if (pendingRef.current.has(key) === pending) return
+    if (pending) pendingRef.current.add(key)
+    else pendingRef.current.delete(key)
+    setPendingKeys(new Set(pendingRef.current))
+  }, [])
+  useLayoutEffect(() => {
+    if (!revealed && !sourcesLoading && pendingRef.current.size === 0) {
+      setRevealed(true)
+    }
+  }, [revealed, sourcesLoading, pendingKeys])
+  return {
+    pending: !revealed && (sourcesLoading || pendingKeys.size > 0),
+    report,
+  }
+}
+
+function useReportFirstLoad(key: string, pending: boolean): void {
+  const report = useContext(FirstLoadContext)
+  useLayoutEffect(() => {
+    report?.(key, pending)
+  }, [report, key, pending])
+  useLayoutEffect(() => () => report?.(key, false), [report, key])
+}
+
 function RepoGroup({
   group,
   activeKey,
@@ -1159,10 +1271,10 @@ function RepoGroup({
     : active && !preview.includes(active)
       ? [...preview.slice(0, -1), active]
       : preview
-  const loading =
-    repo.isFetchingNextPage ||
-    loadingMore ||
-    (Boolean(group.repoFullName) && !collapsed && repo.isPending)
+  const firstPagePending =
+    Boolean(group.repoFullName) && !collapsed && repo.isPending
+  useReportFirstLoad(group.key, firstPagePending)
+  const loading = repo.isFetchingNextPage || loadingMore || firstPagePending
   const hasMore = expanded
     ? (externalHasMore ?? repo.hasMore)
     : threads.length > REPO_PREVIEW_COUNT || (externalHasMore ?? repo.hasMore)
@@ -1252,6 +1364,9 @@ function RepoGroup({
  * column of identical bars reads as a UI element, not as pending content.
  */
 function ThreadListSkeleton({ compact = false }: { compact?: boolean }) {
+  // A first load that lands quickly goes straight to the threads.
+  const noticeable = useNoticeableWait()
+  if (!noticeable) return null
   const groups = [
     [90, 64, 76],
     [72, 84],

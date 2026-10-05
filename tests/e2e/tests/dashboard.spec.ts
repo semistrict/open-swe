@@ -78,6 +78,9 @@ test.describe("Slack → web handoff (real dashboard UI)", () => {
     await page.reload();
     await page.getByTestId("composer-editor").click();
     await expect(page.getByRole("dialog")).toHaveCount(0);
+    // A session refetch still in its route handler would otherwise fail the
+    // next test.
+    await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 
   test("the SAME user continues the conversation in the web app", async ({

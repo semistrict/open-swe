@@ -1,0 +1,104 @@
+# Toolchain and entry points for local development (docs/DEVELOPMENT.md). `mise run <task>`
+# is the supported way in; each task runs the Makefile target of the same name with these
+# tools on PATH, so the logic lives in one place and `make` keeps working for compatibility.
+# uv brings Python itself.
+[tools]
+node = "24"                # what CI runs
+pnpm = "11.22.0"           # keep equal to packageManager in package.json
+uv = "latest"
+
+# --- Running locally -----------------------------------------------------------------------
+
+[tasks.dev-init]
+description = "One-time setup of this checkout: dependencies, .env, its Postgres container"
+run = "make --no-print-directory dev-init"
+
+[tasks.dev-ui]
+description = "Backend on :2024 fronting the hot-reloading dashboard"
+run = "make --no-print-directory dev-ui"
+
+[tasks.dev]
+description = "Backend on :2024, serving the dashboard build"
+run = "make --no-print-directory dev"
+
+[tasks.web]
+description = "The Vite dev server alone on :3000"
+run = "make --no-print-directory web"
+
+[tasks.build-dashboard]
+description = "Build the dashboard into ui/.output/public for `dev` to serve"
+run = "make --no-print-directory build-dashboard"
+
+[tasks.postgres]
+description = "Start this checkout's Postgres container"
+run = "make --no-print-directory postgres"
+
+[tasks.postgres-down]
+description = "Stop this checkout's Postgres container"
+run = "make --no-print-directory postgres-down"
+
+[tasks.chatgpt-login]
+description = "Sign in with ChatGPT for OpenAI models without an API key"
+run = "make --no-print-directory chatgpt-login"
+
+[tasks.tunnel]
+description = "ngrok tunnel to :2024 on your static domain, exposing only /webhooks/*"
+usage = 'arg "<domain>" env="NGROK_DOMAIN" help="Your static ngrok domain, <name>.ngrok-free.dev"'
+run = 'make --no-print-directory tunnel NGROK_DOMAIN="$usage_domain"'
+
+[tasks.fastapi]
+description = "The FastAPI app alone on :8000, without the LangGraph runtime"
+run = "make --no-print-directory run"
+
+[tasks.desktop]
+description = "The Electron app in development, against a backend on :2024"
+run = "make --no-print-directory desktop"
+
+[tasks.install-desktop]
+description = "Install or update Open SWE Desktop on macOS from main"
+run = "make --no-print-directory install-desktop"
+
+[tasks.install-checkout]
+description = "Install this checkout of Open SWE Desktop on macOS"
+run = "make --no-print-directory install-checkout"
+
+[tasks.cli]
+description = "Build the oswe CLI binary into cli/dist/oswe"
+run = "make --no-print-directory cli"
+
+[tasks.flinch]
+description = "Turn a flinch (Alt+Shift+F in the dashboard) into frames, a slow-motion video, and a report"
+usage = 'arg "[args]" var=#true help="[flinch.json] [--before ms] [--fps n] [--slow n] [--model id] [--no-video-review]"'
+run = 'node ui/scripts/flinch.ts ${usage_args:-}'
+
+# --- Changing code -------------------------------------------------------------------------
+
+[tasks.migration]
+description = "Create the next database migration"
+usage = 'arg "<message>" help="Short description"'
+run = 'make --no-print-directory migration m="$usage_message"'
+
+[tasks.swagger]
+description = "Regenerate swagger.json from the backend routes"
+run = "make --no-print-directory swagger"
+
+[tasks.test]
+description = "pytest on tests/ or the given path"
+usage = 'arg "[path]" default="tests/" help="Test file or directory"'
+run = 'make --no-print-directory test TEST_FILE="$usage_path"'
+
+[tasks.lint]
+description = "ruff check and format diff"
+run = "make --no-print-directory lint"
+
+[tasks.format]
+description = "ruff format and fix (rewrites files)"
+run = "make --no-print-directory format"
+
+[tasks.format-check]
+description = "ruff format check"
+run = "make --no-print-directory format-check"
+
+[tasks.typecheck]
+description = "ty check agent tests"
+run = "make --no-print-directory typecheck"

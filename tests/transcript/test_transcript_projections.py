@@ -7,10 +7,15 @@ ending settles on — only exist against a real schema.
 
 from uuid import UUID, uuid7
 
+from agent.threads.summary import _thread_summary
+from agent.transcript import attachments
 from agent.transcript.engine import Command, append
 from agent.transcript.events import (
+    MessageAttachment,
     MessageSender,
     ThreadCreated,
+    ToolCompleted,
+    ToolStarted,
     TurnCheckpointCompleted,
     TurnCompleted,
     TurnInterrupted,
@@ -157,6 +162,78 @@ async def test_ending_one_of_two_open_turns_keeps_the_thread_running(registry_db
     snapshot = await load_snapshot(thread_id)
     assert snapshot is not None
     assert snapshot.thread.status == "idle"
+
+
+async def test_an_image_a_tool_returned_is_served_with_its_call(registry_db: None) -> None:
+    thread_id = str(uuid7())
+    turn_id = uuid7()
+    image_id = uuid7()
+    png = b"\x89PNG\r\n\x1a\n"
+    await _create(thread_id)
+    await _request_turn(thread_id, turn_id)
+    await append(
+        thread_id,
+        [
+            Command(
+                command_id="tool:call-1:started",
+                event=ToolStarted(turn_id=turn_id, tool_call_id="call-1", name="read_file"),
+                actor_kind="agent",
+                turn_id=turn_id,
+            ),
+            Command(
+                command_id="tool:call-1:completed",
+                event=ToolCompleted(
+                    turn_id=turn_id,
+                    tool_call_id="call-1",
+                    status="completed",
+                    attachments=[MessageAttachment(mime_type="image/png", attachment_id=image_id)],
+                ),
+                actor_kind="agent",
+                turn_id=turn_id,
+                attachments=(
+                    attachments.PendingAttachment(
+                        attachment_id=image_id,
+                        message_id="call-1",
+                        position=0,
+                        mime_type="image/png",
+                        file_name=None,
+                        data=png,
+                    ),
+                ),
+            ),
+        ],
+    )
+
+    snapshot = await load_snapshot(thread_id)
+    assert snapshot is not None
+    assert [call.attachments for call in snapshot.tool_calls] == [
+        [{"mime_type": "image/png", "file_name": None, "attachment_id": str(image_id), "url": None}]
+    ]
+    stored = await attachments.load(thread_id, image_id)
+    assert stored is not None
+    assert stored.data == png
+
+
+async def test_a_summary_reports_running_from_the_accepted_message(registry_db: None) -> None:
+    thread_id = str(uuid7())
+    turn_id = uuid7()
+    # What LangGraph says between the accepted message and its queued run starting.
+    langgraph_thread = {
+        "thread_id": thread_id,
+        "status": "idle",
+        "metadata": {"transcript": "v2", "latest_run_status": "success"},
+    }
+    await _create(thread_id)
+    await _request_turn(thread_id, turn_id)
+
+    running = await _thread_summary(langgraph_thread)
+    assert (running["status"], running["lastTurnEndedAt"]) == ("running", None)
+
+    await _end_turn(thread_id, turn_id, tag="completed")
+    finished = await _thread_summary(langgraph_thread)
+    assert finished["status"] == "finished"
+    # What lets a watcher that never caught the run in progress see it end.
+    assert isinstance(finished["lastTurnEndedAt"], int)
 
 
 async def test_a_late_completion_of_an_interrupted_turn_leaves_the_thread_alone(

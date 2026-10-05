@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from typing import Annotated, Literal, NotRequired
+from typing import Annotated, Literal, NotRequired, TypedDict
 
 from langchain.agents.middleware.types import (
     AgentState,
@@ -69,30 +69,43 @@ async def _select_jev_route(task: str) -> SelectedRoute:
     )
 
 
+class RoutedModel(TypedDict):
+    route: SelectedRoute
+    model_id: str
+
+
 class ModelSelectionState(AgentState):
     model_route: NotRequired[PersistedRoute]
     requested_model: NotRequired[Annotated[str | None, OmitFromOutput]]
     requested_effort: NotRequired[Annotated[str | None, OmitFromOutput]]
+    # Mirrors the ``model_routed`` stream event, for the transcript to record:
+    # transcript threads never read the SDK's custom stream.
+    routed_model: NotRequired[Annotated[RoutedModel | None, OmitFromOutput]]
 
 
 def normalize_route(route: PersistedRoute) -> SelectedRoute:
     return "fast" if route == "fast_alt" else route
 
 
-async def _emit_routed_model(
+def _routed_model(
     models: Mapping[str, BaseChatModel],
     route_model_ids: Mapping[str, str],
     route: SelectedRoute,
-) -> None:
-    """Stream the routed model's id so the UI can show it next to `Auto`."""
+) -> RoutedModel | None:
+    """The model a route resolves to, when it has an id to show."""
     model_id = route_model_ids.get(route)
     if model_id is None:
         model = models.get(route)
         model_id = getattr(model, "model_id", None)
     if not isinstance(model_id, str) or not model_id:
-        return
+        return None
+    return {"route": route, "model_id": model_id}
+
+
+def _emit_routed_model(routed: RoutedModel) -> None:
+    """Stream the routed model's id so the UI can show it next to `Auto`."""
     try:
-        get_stream_writer()({"type": "model_routed", "route": route, "model_id": model_id})
+        get_stream_writer()({"type": "model_routed", **routed})
     except Exception:
         # Routing display is cosmetic; never fail a run over it.
         logger.debug("Failed to emit model_routed event", exc_info=True)
@@ -148,12 +161,16 @@ class ModelSelectionMiddleware(OpenSWEMiddleware[ModelSelectionState]):
         self,
         state: ModelSelectionState,
         runtime: Runtime,
-    ) -> dict[str, SelectedRoute]:
+    ) -> dict[str, SelectedRoute | RoutedModel]:
         del runtime
         route = await self.select_route(state)
+        update: dict[str, SelectedRoute | RoutedModel] = {"model_route": route}
         if self._routing_mode == "auto" or state.get("requested_model"):
-            await _emit_routed_model(self._models, self._route_model_ids, route)
-        return {"model_route": route}
+            routed = _routed_model(self._models, self._route_model_ids, route)
+            if routed is not None:
+                _emit_routed_model(routed)
+                update["routed_model"] = routed
+        return update
 
     async def awrap_model_call(
         self,

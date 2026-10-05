@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useRouterState } from "@tanstack/react-router"
+import { toast } from "sonner"
 
 import type {
   DesktopLocalThreadSummary,
@@ -10,24 +11,28 @@ import type {
 import type { AgentThread, ImageChunk } from "@/features/agents/lib/types"
 import type { CreateAgentThreadVariables } from "@/features/agents/lib/queries"
 import {
+  orderByRecentUse,
   pickComposerRepo,
   pickComposerWorkspace,
 } from "@/features/agents/lib/composerWorkspace"
 import type { ModelSelection } from "@/features/agents/lib/provider/useModelOptions"
 import type { RunTarget } from "@/features/agents/components/composer/RunTargetSelector"
 import { AgentPromptBar } from "@/features/agents/components/AgentPromptBar"
+import type {
+  RestoredDraft,
+  SubmitOptions,
+} from "@/features/agents/components/composer/ChatComposer"
 import { AgentThreadHeader } from "@/features/agents/components/AgentThreadHeader"
 import { OnboardingDialog } from "@/features/agents/components/OnboardingDialog"
-import { Messages } from "@/features/agents/components/messages"
 import { AgentComposerDock } from "@/features/agents/components/composer/AgentComposerDock"
 import { AgentRightPanel } from "@/features/agents/components/panel/AgentRightPanel"
-import { LocalRepoRightPanel } from "@/features/agents/components/LocalRepoRightPanel"
 import {
   agentThreadKeys,
   invalidateAgentThreadLists,
   optimisticThread,
   seedAgentThreadLists,
   useAgentSkills,
+  useSidebarRepos,
   useWorkspaceOptions,
 } from "@/features/agents/lib/queries"
 import {
@@ -49,6 +54,8 @@ import {
 } from "@/features/agents/lib/gitPanelPreferences"
 import { useTerminalGroups } from "@/features/agents/lib/terminalGroups"
 import { api } from "@/lib/api"
+import { usePreloadedModule } from "@/lib/usePreloadedModule"
+import { reportError } from "@/lib/errorReporting"
 import { useProfile, useRepos } from "@/lib/profile"
 import { useSession } from "@/lib/session"
 import {
@@ -71,6 +78,13 @@ interface PendingCloudSubmit {
   /** Stop was pressed before the run was accepted; cancel it once it is. */
   stopRequested: boolean
 }
+
+// Loaded apart from the home page: the transcript renderer (markdown, diffs,
+// approval cards) shows here only once a message is sent, and the local repo
+// panel, which carries the diff viewer, only in the desktop app.
+const loadMessages = () => import("@/features/agents/components/messages")
+const loadLocalRepoRightPanel = () =>
+  import("@/features/agents/components/LocalRepoRightPanel")
 
 export function AgentsHome({
   initialRepo,
@@ -120,6 +134,7 @@ export function AgentsHome({
   const defaultWorkspaceSlug = workspaceOptionsQuery.data?.default_slug ?? null
   const [submittedDraft, setSubmittedDraft] =
     useState<CreateAgentThreadVariables | null>(null)
+  const [restoreDraft, setRestoreDraft] = useState<RestoredDraft | null>(null)
   const [panelCollapsed, setPanelCollapsed] = useState(() =>
     readStoredPanelCollapsed(NEW_AGENT_PANEL_ID)
   )
@@ -145,6 +160,11 @@ export function AgentsHome({
   useEffect(() => {
     localRepoPathRef.current = localRepoPath
   }, [localRepoPath])
+  const Messages = usePreloadedModule(loadMessages)?.Messages
+  const LocalRepoRightPanel = usePreloadedModule(
+    loadLocalRepoRightPanel,
+    isDesktop
+  )?.LocalRepoRightPanel
   const [localRepoBranch, setLocalRepoBranch] = useState<string | null>(null)
   const [localRepoBranches, setLocalRepoBranches] = useState<
     Array<DesktopProjectRef>
@@ -194,7 +214,12 @@ export function AgentsHome({
   const accessibleRepos = reposQuery.data?.repositories
   // Memoized: a fresh array fed straight into the pick below reads as a
   // mutation to the React Compiler and costs the component its optimization.
-  const workspaceRepos = useMemo(() => accessibleRepos ?? [], [accessibleRepos])
+  // The sidebar's repositories, which it already fetched, say which are in use.
+  const recentRepos = useSidebarRepos({}).data
+  const workspaceRepos = useMemo(
+    () => orderByRecentUse(accessibleRepos ?? [], recentRepos ?? []),
+    [accessibleRepos, recentRepos]
+  )
   const repo = pickComposerRepo({
     override: repoOverride,
     userDefault: userDefaultRepo,
@@ -428,7 +453,37 @@ export function AgentsHome({
     resetPendingSubmit()
   }
 
-  const handleSubmit = (prompt: string, images: Array<ImageChunk>) => {
+  /** ⌘↵ hands the prompt back here on failure, ahead of whatever was typed since. */
+  const failBackgroundStart = (
+    error: unknown,
+    prompt: string,
+    images: Array<ImageChunk>
+  ) => {
+    reportError({ title: "Couldn't start the thread", error })
+    setRestoreDraft((previous) => ({
+      key: (previous?.key ?? 0) + 1,
+      text: prompt,
+      images,
+    }))
+  }
+
+  const announceBackgroundStart = (title: string, open: () => void) => {
+    toast.success("Started in the background", {
+      description: title,
+      action: { label: "Open", onClick: open },
+    })
+  }
+
+  /**
+   * Enter starts the thread and opens it. ⌘↵ starts it in the background: the
+   * composer clears for the next prompt, and the page stays here.
+   */
+  const handleSubmit = (
+    prompt: string,
+    images: Array<ImageChunk>,
+    options?: SubmitOptions
+  ) => {
+    const background = options?.alternate === true
     void requestNotificationPermission().then((perm) => {
       if (perm === "granted") setNotificationsPref(true)
     })
@@ -450,7 +505,7 @@ export function AgentsHome({
         model_id: activeSelection?.modelId ?? null,
         effort: activeSelection?.effort ?? null,
       }
-      setSubmittedDraft(draft)
+      if (!background) setSubmittedDraft(draft)
       setLocalError(null)
       window.localStorage.setItem(LAST_LOCAL_REPO_KEY, cwd)
       void (async () => {
@@ -460,6 +515,10 @@ export function AgentsHome({
             activeSelection?.modelId
           )
           if (credentialError) {
+            if (background) {
+              failBackgroundStart(new Error(credentialError), prompt, images)
+              return
+            }
             resetPendingSubmit()
             setLocalError(credentialError)
             return
@@ -494,11 +553,21 @@ export function AgentsHome({
               ...current.filter((thread) => thread.id !== localSession.id),
             ]
           )
-          await navigate({
-            to: "/agents/local/$sessionId",
-            params: { sessionId: localSession.id },
-          })
+          const openLocal = () =>
+            void navigate({
+              to: "/agents/local/$sessionId",
+              params: { sessionId: localSession.id },
+            })
+          if (background) {
+            announceBackgroundStart(localSession.title, openLocal)
+            return
+          }
+          openLocal()
         } catch (error) {
+          if (background) {
+            failBackgroundStart(error, prompt, images)
+            return
+          }
           resetPendingSubmit()
           setLocalError(
             error instanceof Error
@@ -522,7 +591,7 @@ export function AgentsHome({
       model_id: activeSelection?.modelId ?? null,
       effort: activeSelection?.effort ?? null,
     }
-    setSubmittedDraft(draft)
+    if (!background) setSubmittedDraft(draft)
     setLocalError(null)
 
     const configurable: Record<string, unknown> =
@@ -544,8 +613,12 @@ export function AgentsHome({
 
     const threadId = crypto.randomUUID()
     const pending: PendingCloudSubmit = { threadId, stopRequested: false }
-    pendingRun.current = pending
-    setPendingThreadId(threadId)
+    // A background start is not what this page is waiting for: a submission
+    // after it still opens its own thread.
+    if (!background) {
+      pendingRun.current = pending
+      setPendingThreadId(threadId)
+    }
     void (async () => {
       try {
         await startRun(
@@ -557,6 +630,10 @@ export function AgentsHome({
           })
         )
       } catch (error) {
+        if (background) {
+          failBackgroundStart(error, prompt, images)
+          return
+        }
         // A run that never started has nothing left to cancel, and the page
         // already went back to the empty composer when Stop was pressed.
         if (!pending.stopRequested) handleCloudSubmitError(error)
@@ -570,6 +647,13 @@ export function AgentsHome({
       queryClient.setQueryData(agentThreadKeys.detail(threadId), thread)
       seedAgentThreadLists(queryClient, thread)
       invalidateAgentThreadLists(queryClient)
+      if (background) {
+        announceBackgroundStart(
+          thread.title,
+          () => void navigate({ to: "/agents/$threadId", params: { threadId } })
+        )
+        return
+      }
       if (pending.stopRequested) {
         await cancelPendingThread(threadId)
         return
@@ -609,11 +693,15 @@ export function AgentsHome({
           }
         />
         {optimisticDraftThread ? (
-          <Messages
-            messages={optimisticDraftThread.messages}
-            isStreaming
-            contentWidthClass="max-w-3xl"
-          />
+          Messages ? (
+            <Messages
+              messages={optimisticDraftThread.messages}
+              isStreaming
+              contentWidthClass="max-w-3xl"
+            />
+          ) : (
+            <div className="flex-1" />
+          )
         ) : (
           <div className="flex min-h-0 flex-1 overflow-y-auto px-3 py-6 sm:px-6 sm:py-8">
             <div className="mx-auto flex min-h-full w-full max-w-3xl flex-1 flex-col items-center justify-center gap-6">
@@ -644,6 +732,7 @@ export function AgentsHome({
             compact
             placeholder="Do anything"
             onSubmit={handleSubmit}
+            restoreDraft={restoreDraft}
             onStop={
               optimisticDraftThread && runTarget === "cloud"
                 ? stopPendingSubmit
@@ -691,12 +780,14 @@ export function AgentsHome({
         </AgentComposerDock>
       </div>
       {localRepo ? (
-        <LocalRepoRightPanel
-          scopeId={localRepo.scopeId}
-          cwd={localRepo.cwd}
-          collapsed={panelCollapsed}
-          onCollapsedChange={handlePanelCollapsedChange}
-        />
+        LocalRepoRightPanel ? (
+          <LocalRepoRightPanel
+            scopeId={localRepo.scopeId}
+            cwd={localRepo.cwd}
+            collapsed={panelCollapsed}
+            onCollapsedChange={handlePanelCollapsedChange}
+          />
+        ) : null
       ) : (
         <AgentRightPanel
           threadRef={NEW_AGENT_PANEL_REF}

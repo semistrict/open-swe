@@ -50,6 +50,8 @@ so what Playwright asserts on is exactly what the real agent produced.
   files carry a real per-file `patch`, so eligibility checks that read the diff
   see what GitHub would return.
 - `langgraph.e2e.json` — dev-server config pointing at the two entrypoints above.
+- `serve.py` — starts that server as `langgraph dev` would, without file
+  persistence, so a run neither inherits nor leaves state.
 - `static/{slack,github}.html` — the mock Slack/GitHub UIs (external SaaS we can't
   run locally). The dashboard is **not** mocked — it's the real `ui/` app.
 - `global-setup.ts` — builds the real `ui/` SPA (once) so the harness can serve it.
@@ -96,6 +98,34 @@ The webServer is reused locally, so re-running a single spec against a warm
 ```bash
 pnpm exec playwright test tests/full_flow.spec.ts
 ```
+
+## Perf budgets
+
+`perf_budgets.spec.ts` drives a few everyday flows (first load, opening a
+hovered thread, switching threads, sitting on a thread) and counts the work
+each one does: React commits, layout shifts (with what moved), first-load
+script and style kilobytes, and transcript requests after a click. The counts
+come out the same on every run of a build, unlike timings, which it only
+reports. Each count has a ceiling in `perf-budgets.json`; a run over one fails
+and says which elements shifted or which scripts are biggest.
+
+A ceiling only comes down. When a change makes a flow cheaper, lock it in:
+
+```bash
+E2E_PERF_RATCHET=1 pnpm exec playwright test tests/perf_budgets.spec.ts
+```
+
+That rewrites each ceiling to the measurement plus a little headroom (commits
+move by a few with response order; bundle size gets 2%). Raising one is a hand
+edit, so it shows up in review with the change that needed it.
+
+Commit counts grow with what the sidebar lists, so measure against a fresh
+database, as CI does: a Postgres that earlier runs filled reports more work
+than CI would and ratchets nothing. CI's own runs share one database per
+shard with the specs before them, so its counts sit a few above a fresh
+run's; the ceilings are set from CI's. The e2e server itself keeps no state
+between runs (`serve.py` starts it without `langgraph dev`'s file persistence,
+which shares `.langgraph_api/` with `mise run dev` in the repo root).
 
 ## Artifacts (replay a run)
 

@@ -1,15 +1,20 @@
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 from blockbuster import BlockBuster
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableBinding
 from langchain_openai.chat_models.codex import (  # noqa: PLC2701
     CHATGPT_CODEX_BASE_URL,
     _ChatOpenAICodex,
 )
+from pydantic import BaseModel
 
 from agent.utils import model, openai_oauth
 
@@ -30,6 +35,7 @@ def _clean_oauth_env(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
         "OPEN_SWE_OPENAI_OAUTH_BROKER_URL",
         "OPEN_SWE_OPENAI_OAUTH_BROKER_TOKEN",
+        "OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE",
         "OPENAI_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -38,6 +44,21 @@ def _clean_oauth_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def _configure(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPEN_SWE_OPENAI_OAUTH_BROKER_URL", "http://127.0.0.1:3210/token")
     monkeypatch.setenv("OPEN_SWE_OPENAI_OAUTH_BROKER_TOKEN", "broker-secret")
+
+
+def _configure_token_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    store = tmp_path / "chatgpt-auth.json"
+    store.write_text(
+        json.dumps(
+            {
+                "access_token": "stored-access",
+                "refresh_token": "stored-refresh",
+                "expires_at": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+                "account_id": "stored-account",
+            }
+        )
+    )
+    monkeypatch.setenv("OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE", str(store))
 
 
 def test_oauth_model_uses_dedicated_account_transport(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -50,7 +71,7 @@ def test_oauth_model_uses_dedicated_account_transport(monkeypatch: pytest.Monkey
         return "MODEL"
 
     with (
-        patch.object(model, "build_desktop_openai_oauth_model", fake_model),
+        patch.object(model, "build_openai_oauth_model", fake_model),
         detect_blocking_calls(),
     ):
         result = model.make_model("openai:gpt-5.6-sol", use_gateway=False, max_tokens=123)
@@ -67,7 +88,7 @@ def test_oauth_model_enforces_account_backend_contract(
 ) -> None:
     _configure(monkeypatch)
 
-    result = openai_oauth.build_desktop_openai_oauth_model("gpt-5.6-sol")
+    result = openai_oauth.build_openai_oauth_model("gpt-5.6-sol")
 
     assert isinstance(result, _ChatOpenAICodex)
     assert str(result.openai_api_base).rstrip("/") == CHATGPT_CODEX_BASE_URL
@@ -80,7 +101,7 @@ def test_oauth_model_enforces_account_backend_contract(
 def test_oauth_rejects_non_loopback_broker(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure(monkeypatch)
     monkeypatch.setenv("OPEN_SWE_OPENAI_OAUTH_BROKER_URL", "https://example.com/token")
-    assert openai_oauth.desktop_openai_oauth_available() is False
+    assert openai_oauth.openai_oauth_available() is False
 
 
 @pytest.mark.filterwarnings("ignore:.*experimental and unofficial.*:UserWarning")
@@ -117,7 +138,7 @@ async def test_token_provider_authenticates_to_broker(
             requests.append((url, headers))
             return Response()
 
-    oauth_model = openai_oauth.build_desktop_openai_oauth_model("gpt-5.6-sol")
+    oauth_model = openai_oauth.build_openai_oauth_model("gpt-5.6-sol")
     monkeypatch.setattr(openai_oauth.httpx2, "AsyncClient", Client)
     provider = oauth_model.token_provider  # type: ignore[attr-defined]
     first_token = await provider.aget_token()
@@ -144,3 +165,51 @@ async def test_token_provider_authenticates_to_broker(
     )
     assert payload["instructions"] == "agent instructions"
     assert all(item.get("role") != "system" for item in payload["input"])
+
+
+@pytest.mark.filterwarnings("ignore:.*experimental and unofficial.*:UserWarning")
+async def test_token_file_supplies_credentials_without_a_broker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _configure_token_file(monkeypatch, tmp_path)
+
+    oauth_model = model.make_model("openai:gpt-5.6-sol", use_gateway=False)
+    with detect_blocking_calls():
+        token = await oauth_model.token_provider.aget_token()  # type: ignore[attr-defined]
+
+    assert isinstance(oauth_model, _ChatOpenAICodex)
+    assert oauth_model.originator == "open_swe"
+    assert token.access_token == "stored-access"
+    assert token.account_id == "stored-account"
+
+
+@pytest.mark.filterwarnings("ignore:.*experimental and unofficial.*:UserWarning")
+def test_desktop_broker_takes_precedence_over_token_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _configure(monkeypatch)
+    monkeypatch.setenv("OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE", str(tmp_path / "chatgpt-auth.json"))
+
+    result = openai_oauth.build_openai_oauth_model("gpt-5.6-sol")
+
+    assert result.originator == "open_swe_desktop"  # type: ignore[attr-defined]
+
+
+@pytest.mark.filterwarnings("ignore:.*experimental and unofficial.*:UserWarning")
+def test_structured_output_requests_a_tool_call(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Codex streams never carry `parsed`, so json_schema output fails to parse."""
+
+    class Title(BaseModel):
+        title: str
+
+    _configure_token_file(monkeypatch, tmp_path)
+    oauth_model = openai_oauth.build_openai_oauth_model("gpt-5.6-sol")
+
+    binding = oauth_model.with_structured_output(Title).first  # type: ignore[attr-defined]
+    assert isinstance(binding, RunnableBinding)
+    payload = oauth_model._get_request_payload([HumanMessage("hi")], **binding.kwargs)  # type: ignore[attr-defined]
+
+    assert [tool["name"] for tool in payload["tools"]] == ["Title"]
+    assert "format" not in payload.get("text", {})

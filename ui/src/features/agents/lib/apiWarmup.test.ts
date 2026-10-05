@@ -4,11 +4,11 @@ import { afterEach, describe, expect, it, vi } from "vitest"
 
 import { agentsApi } from "./api"
 import { apiWarmupScript } from "./apiWarmup"
+import { fetchTranscript } from "./transcript/api"
 import { SIDEBAR_PAGE_SIZE, sidebarRecentsParams } from "./queries"
 import type { ChatSort } from "./sidebarPrefs"
 
 const THREAD_ID = "1dd69115-f4b9-507f-b4d5-9f355f9f5ba0"
-const STATE_PATH = `/dashboard/api/threads/${THREAD_ID}/state`
 
 function setReadyState(value: DocumentReadyState) {
   Object.defineProperty(document, "readyState", { value, configurable: true })
@@ -28,6 +28,15 @@ function stubFetch() {
   )
   vi.stubGlobal("fetch", original)
   return original
+}
+
+/** The URL the app itself requests through `load`, captured from the real client. */
+async function recordedUrl(load: () => Promise<unknown>): Promise<string> {
+  const spy = stubFetch()
+  await load().catch(() => undefined)
+  const called = spy.mock.calls[0]?.[0]
+  vi.unstubAllGlobals()
+  return absolute(String(called))
 }
 
 /** What the app itself requests, captured through the real api client. */
@@ -80,7 +89,9 @@ describe("apiWarmupScript", () => {
     expect(apiWarmupScript(`/agents/local/${THREAD_ID}`)).toBeNull()
     expect(apiWarmupScript(`/agents/${THREAD_ID}/plan`)).toBeNull()
     expect(apiWarmupScript("/agents")).toContain("/threads/page")
-    expect(apiWarmupScript(`/agents/${THREAD_ID}`)).toContain(STATE_PATH)
+    expect(apiWarmupScript(`/agents/${THREAD_ID}`)).toContain(
+      `/threads/${THREAD_ID}/transcript`
+    )
   })
 
   it("warms only the sidebar on the agents home", () => {
@@ -93,27 +104,47 @@ describe("apiWarmupScript", () => {
     expect(String(original.mock.calls[0]?.[0])).toContain("/threads/page")
   })
 
-  it("warms both state and sidebar on a thread route, and hands each over once", async () => {
+  it("warms the thread's detail, transcript and sidebar, and hands each over once", async () => {
+    const detailUrl = await recordedUrl(() => agentsApi.getThread(THREAD_ID))
+    const transcriptUrl = await recordedUrl(() => fetchTranscript(THREAD_ID))
+    const sidebarUrl = await recordedSidebarUrl()
     setReadyState("loading")
     const original = stubFetch()
 
     run(apiWarmupScript(`/agents/${THREAD_ID}`)!)
-    expect(original).toHaveBeenCalledTimes(2)
+    expect(original).toHaveBeenCalledTimes(3)
 
-    const warmedState = await window.fetch(absolute(STATE_PATH))
-    const sidebarUrl = String(
-      original.mock.calls.find((c) =>
-        String(c[0]).includes("/threads/page")
-      )?.[0]
-    )
-    const warmedSidebar = await window.fetch(sidebarUrl)
-
-    expect(warmedState).toBeInstanceOf(Response)
-    expect(warmedSidebar).toBeInstanceOf(Response)
-    // Both served from the warm pool, so no extra network calls.
-    expect(original).toHaveBeenCalledTimes(2)
+    for (const url of [detailUrl, transcriptUrl, sidebarUrl]) {
+      expect(await window.fetch(url)).toBeInstanceOf(Response)
+    }
+    // All served from the warm pool, so no extra network calls.
+    expect(original).toHaveBeenCalledTimes(3)
     // Pool drained → the patch removes itself.
     expect(window.fetch).toBe(original)
+  })
+
+  // A thread opened just as its run is dispatched has no transcript yet, so
+  // the warmed read 404s; handing that over left the thread empty.
+  it("lets the app ask again for a warmed read that failed", async () => {
+    const transcriptUrl = await recordedUrl(() => fetchTranscript(THREAD_ID))
+    setReadyState("loading")
+    let transcriptReads = 0
+    const original = vi.fn((input: RequestInfo | URL) => {
+      if (absolute(String(input)) !== transcriptUrl)
+        return Promise.resolve(new Response("{}"))
+      transcriptReads += 1
+      return Promise.resolve(
+        new Response("{}", { status: transcriptReads === 1 ? 404 : 200 })
+      )
+    })
+    vi.stubGlobal("fetch", original)
+
+    run(apiWarmupScript(`/agents/${THREAD_ID}`)!)
+    await Promise.resolve()
+
+    const response = await window.fetch(transcriptUrl)
+    expect(response.status).toBe(200)
+    expect(transcriptReads).toBe(2)
   })
 
   it("passes unrelated requests through", async () => {

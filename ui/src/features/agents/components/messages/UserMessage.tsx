@@ -7,11 +7,13 @@ import { MessageImage } from "./MessageImage"
 import { MessageTimestamp } from "./MessageTimestamp"
 import { SlackMrkdwn } from "./SlackMrkdwn"
 import type { Message } from "@/features/agents/lib/types"
+import { useLoadingIndicator } from "@/features/agents/lib/useNoticeableWait"
 
 const COLLAPSED_MAX_HEIGHT_PX = 250
 
 export function UserMessage({ message }: { message: Message }) {
   const isSystem = message.structuredSenderKind === "system"
+  const showSending = useLoadingIndicator(message.deliveryStatus === "sending")
   const isSlack = message.structuredSurface === "slack"
   const text = message.chunks
     .filter((c) => c.kind === "text")
@@ -64,6 +66,18 @@ export function UserMessage({ message }: { message: Message }) {
               </span>
             )}
           </button>
+        ) : (message.optimistic || message.senderPending) &&
+          !message.structuredSenderName &&
+          !isSlack &&
+          !message.structuredSenderIsBot ? (
+          // A message sent before its sender's name is known (the first one in
+          // a new thread) holds the name's row until the transcript fills it.
+          <div
+            aria-hidden
+            className="invisible mb-1 flex items-center gap-1 px-1 text-[11px] font-medium"
+          >
+            <span>{"\u00a0"}</span>
+          </div>
         ) : (
           (message.structuredSenderName ||
             isSlack ||
@@ -143,36 +157,44 @@ export function UserMessage({ message }: { message: Message }) {
             )}
           </div>
         )}
-        {message.deliveryStatus && (
-          <div
-            className={`mt-1 pr-1 text-right text-[11px] ${
-              message.deliveryStatus === "failed"
-                ? "text-destructive"
-                : "text-muted-foreground"
-            }`}
-          >
-            {message.deliveryStatus !== "failed" ? (
-              "Sending"
-            ) : (
-              <span
-                title={message.deliveryError}
-                data-testid="user-message-delivery-error"
-              >
-                {message.deliveryError
-                  ? `Failed to send · ${message.deliveryError}`
-                  : "Failed to send"}
-              </span>
-            )}
+        {message.deliveryStatus === "failed" ? (
+          <div className="mt-1 pr-1 text-right text-[11px] leading-4 text-destructive">
+            <span
+              title={message.deliveryError}
+              data-testid="user-message-delivery-error"
+            >
+              {message.deliveryError
+                ? `Failed to send · ${message.deliveryError}`
+                : "Failed to send"}
+            </span>
           </div>
-        )}
-        {!message.timestampIsFallback && (!isSystem || expanded) && (
-          <MessageTimestamp
-            timestamp={message.timestamp}
-            align={isSystem ? "left" : "right"}
-            className="mt-1 pr-1"
-          />
+        ) : message.deliveryStatus === "sending" || showSending ? (
+          <SendingStatus visible={showSending} />
+        ) : (
+          !message.timestampIsFallback &&
+          (!isSystem || expanded) && (
+            <MessageTimestamp
+              timestamp={message.timestamp}
+              align={isSystem ? "left" : "right"}
+              className="mt-1 pr-1"
+            />
+          )
         )}
       </div>
+    </div>
+  )
+}
+
+/**
+ * Holds the timestamp row's height while the message is in flight. "Sending"
+ * shows only once the wait is long enough to notice, and then stays long
+ * enough to read: a fast echo swaps the row for the timestamp without
+ * anything appearing or moving, and a slower one never flashes the label.
+ */
+function SendingStatus({ visible }: { visible: boolean }) {
+  return (
+    <div className="mt-1 min-h-4 pr-1 text-right text-[11px] leading-4 text-muted-foreground">
+      {visible && "Sending"}
     </div>
   )
 }

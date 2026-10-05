@@ -13,11 +13,6 @@ import type {
 import type { TerminalGroupsController } from "@/features/agents/lib/terminalGroups"
 import type { TerminalTarget } from "@/features/agents/lib/terminalSession"
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@/components/ui/tooltip"
-import {
-  TerminalActions,
-  TerminalPanel,
-} from "@/features/agents/components/TerminalPanel"
-import { FilesPanel } from "@/features/agents/components/files/FilesPanel"
 import { RightPanelTabs } from "@/features/agents/components/panel/RightPanelTabs"
 import { RightPanelSheet } from "@/features/agents/components/panel/RightPanelSheet"
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "@/features/agents/components/panel/rightPanelLayout"
@@ -28,7 +23,23 @@ import {
 import { terminalTabTitle } from "@/features/agents/lib/terminalTabTitle"
 import { workspaceTargetKey } from "@/features/agents/lib/workspaceFiles"
 import { useRegisterAppCommands } from "@/lib/appCommands"
+import { usePreloadedModule } from "@/lib/usePreloadedModule"
 import { cn } from "@/lib/utils"
+
+// A surface's body (the terminal emulator, the file viewer, and the diff
+// rendering they share) loads apart from the panel's frame, which every page
+// renders, often collapsed. It is fetched once the panel mounts.
+const loadSurfaces = async () => {
+  const [terminal, files] = await Promise.all([
+    import("@/features/agents/components/TerminalPanel"),
+    import("@/features/agents/components/files/FilesPanel"),
+  ])
+  return {
+    TerminalActions: terminal.TerminalActions,
+    TerminalPanel: terminal.TerminalPanel,
+    FilesPanel: files.FilesPanel,
+  }
+}
 
 export interface AgentRightPanelProps {
   threadRef: PanelThreadRef
@@ -98,6 +109,7 @@ export function AgentRightPanel(props: AgentRightPanelProps) {
     collapsed,
     onCollapsedChange,
   } = props
+  const surfacesModule = usePreloadedModule(loadSurfaces)
 
   const byThreadKey = useRightPanelStore((state) => state.byThreadKey)
   const openSurface = useRightPanelStore((state) => state.open)
@@ -276,8 +288,8 @@ export function AgentRightPanel(props: AgentRightPanelProps) {
 
   const layoutControls = (
     <div className="flex shrink-0 items-center">
-      {activeSurface?.kind === "terminal" ? (
-        <TerminalActions
+      {activeSurface?.kind === "terminal" && surfacesModule ? (
+        <surfacesModule.TerminalActions
           groupId={activeSurface.resourceId}
           terminals={terminals}
         />
@@ -311,8 +323,9 @@ export function AgentRightPanel(props: AgentRightPanelProps) {
       {activeSurface?.kind === "diff"
         ? props.renderDiff({ fullScreen: maximized })
         : null}
-      {activeSurface?.kind === "files" || activeSurface?.kind === "file" ? (
-        <FilesPanel
+      {surfacesModule &&
+      (activeSurface?.kind === "files" || activeSurface?.kind === "file") ? (
+        <surfacesModule.FilesPanel
           key={workspaceTargetKey(terminalTarget)}
           target={terminalTarget}
           relativePath={
@@ -336,18 +349,20 @@ export function AgentRightPanel(props: AgentRightPanelProps) {
               surface.id !== activeSurfaceId && "hidden"
             )}
           >
-            <TerminalPanel
-              target={terminalTarget}
-              cwd={cwd}
-              groupId={surface.resourceId}
-              terminals={terminals}
-              {...(props.onTerminalOpenFile
-                ? { onOpenFile: props.onTerminalOpenFile }
-                : {})}
-              {...(props.onTerminalAddToChat
-                ? { onAddToChat: props.onTerminalAddToChat }
-                : {})}
-            />
+            {surfacesModule ? (
+              <surfacesModule.TerminalPanel
+                target={terminalTarget}
+                cwd={cwd}
+                groupId={surface.resourceId}
+                terminals={terminals}
+                {...(props.onTerminalOpenFile
+                  ? { onOpenFile: props.onTerminalOpenFile }
+                  : {})}
+                {...(props.onTerminalAddToChat
+                  ? { onAddToChat: props.onTerminalAddToChat }
+                  : {})}
+              />
+            ) : null}
           </div>
         ))}
     </>

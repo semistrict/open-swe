@@ -11,7 +11,7 @@ from agent.database.postgres import MIGRATION_DIR
 
 message = " ".join(sys.argv[1:]).strip()
 if not message:
-    sys.exit('usage: make migration m="Short description"')
+    sys.exit('usage: mise run migration "Short description"')
 
 versions = MIGRATION_DIR / "versions"
 number = 1 + max(

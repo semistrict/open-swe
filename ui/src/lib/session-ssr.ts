@@ -2,8 +2,11 @@ import { redirect } from "@tanstack/react-router"
 import { createIsomorphicFn } from "@tanstack/react-start"
 import { getRequestUrl } from "@tanstack/react-start/server"
 
+import { api } from "./api"
 import { isCrossOriginApiBase } from "./api-base"
 import { sanitizeAuthRedirect } from "./auth-redirect-core"
+import { dashboardRequestOrigin } from "./dashboard-fetch"
+import { profileQueryOptions } from "./profile"
 import { sessionQueryOptions } from "./session"
 import type { QueryClient } from "@tanstack/react-query"
 
@@ -41,11 +44,33 @@ export const resolveSessionOnServer = createIsomorphicFn()
       return
     }
 
-    const user = await queryClient
-      .ensureQueryData(sessionQueryOptions)
-      .catch(() => undefined)
+    // Without DASHBOARD_API_URL (the Vite dev server behind `mise run dev-ui`)
+    // a server render has no backend to call; every read would fail.
+    if (!dashboardRequestOrigin()) return
 
-    if (user !== null || isPublicPath(href)) return
+    // The profile decides parts of the shell, such as whether the sidebar
+    // lists Concierge, so it is resolved here too instead of after hydration,
+    // when its arrival moves what is already on screen. It is fetched beside
+    // the session rather than after it and stored under the session's login.
+    const publicPath = isPublicPath(href)
+    const [user, profile] = await Promise.all([
+      queryClient.ensureQueryData(sessionQueryOptions).catch(() => undefined),
+      publicPath
+        ? undefined
+        : api.profile().catch((error: unknown) => {
+            // The client fetches it on mount instead.
+            console.warn("Could not resolve the profile while rendering", error)
+            return undefined
+          }),
+    ])
+    if (user && profile) {
+      queryClient.setQueryData(
+        profileQueryOptions(user.login).queryKey,
+        profile
+      )
+    }
+
+    if (user !== null || publicPath) return
     throw redirect({
       to: "/login",
       search: { redirect: sanitizeAuthRedirect(href) },

@@ -80,6 +80,33 @@ async def test_list_repos_follows_installation_and_repository_next_links(
     }
 
 
+async def test_local_dev_without_an_app_lists_the_gh_users_own_repositories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LANGSMITH_LANGGRAPH_API_VARIANT", "local_dev")
+    monkeypatch.setattr(repos, "GITHUB_APP_ID", "")
+    monkeypatch.setattr(repos, "get_valid_access_token", AsyncMock(return_value="gh-token"))
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/user/repos"
+        if request.url.params.get("page") == "2":
+            return httpx.Response(200, json=[{"full_name": "Acme/API", "private": True}])
+        return httpx.Response(
+            200,
+            json=[{"full_name": "octocat/hello", "private": False, "archived": True}],
+            headers={"Link": '<https://api.github.com/user/repos?page=2>; rel="next"'},
+        )
+
+    mock_github_sdk(monkeypatch, handle)
+    assert await repos.fetch_user_installations_and_repos("octocat") == (
+        [],
+        [
+            {"full_name": "octocat/hello", "private": False, "archived": True},
+            {"full_name": "Acme/API", "private": True, "archived": False},
+        ],
+    )
+
+
 async def test_access_checks_observe_removed_repositories_without_http_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

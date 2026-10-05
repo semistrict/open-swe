@@ -20,7 +20,7 @@ const source = {
   startRun: vi.fn(() => Promise.resolve(undefined)),
 }
 
-vi.mock("@/features/agents/lib/threadSource/ThreadSourceProvider", () => ({
+vi.mock("@/features/agents/lib/threadSource/context", () => ({
   useThreadSource: () => source,
 }))
 vi.mock("@/lib/errorReporting", () => ({ reportError: vi.fn() }))

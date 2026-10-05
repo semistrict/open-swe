@@ -315,6 +315,11 @@ export function AgentThreadHeader({
                 </Menu.Portal>
               </Menu.Root>
             )}
+            {archived && (
+              <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-[11px] font-normal text-muted-foreground">
+                Archived
+              </span>
+            )}
           </div>
         )}
         <div className="ml-auto flex shrink-0 items-center gap-3">

@@ -60,7 +60,17 @@ function warmApiRequests(
   for (const url of targets) {
     const href = new URL(url, location.href).href
     const request = fetch(href, { credentials: "include" })
-    request.catch(() => {})
+    // A failed read is not handed over: the app asks again when it needs it.
+    // A thread opened just as its run is dispatched has no transcript yet,
+    // and the warmed 404 left its page empty.
+    request.then(
+      (response) => {
+        if (response.ok || pending.get(href) !== request) return
+        pending.delete(href)
+        if (pending.size === 0) release()
+      },
+      () => {}
+    )
     pending.set(href, request)
   }
 
@@ -116,6 +126,11 @@ function sidebarPageEndpoint(): string {
  * still parsing and hands each in-flight response to the app's own later call.
  * Nothing can be requested until the bundle boots, which is most of the delay
  * before either the transcript or the sidebar can paint.
+ *
+ * A thread page waits on the thread's detail to pick its source, then on the
+ * transcript snapshot to paint. Threads that predate the transcript read their
+ * LangGraph state instead and are left to fetch it themselves: warming that
+ * read for every thread cost the backend a checkpoint load no new thread uses.
  */
 export function apiWarmupScript(pathname: string): string | null {
   const threadId = THREAD_PATH_RE.exec(pathname)?.[1]
@@ -123,7 +138,10 @@ export function apiWarmupScript(pathname: string): string | null {
   if (!threadId && !isAgentsHome) return null
 
   const urls = threadId
-    ? [`${agentsLangGraphApiUrl}/threads/${threadId}/state`]
+    ? [
+        `${agentsLangGraphApiUrl}/threads/${threadId}`,
+        `${agentsLangGraphApiUrl}/threads/${threadId}/transcript`,
+      ]
     : []
   const args = [
     JSON.stringify(urls),

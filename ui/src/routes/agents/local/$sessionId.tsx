@@ -3,7 +3,7 @@ import { useEffect } from "react"
 
 import { LocalAgentThreadView } from "@/features/agents/components/LocalAgentThreadView"
 import { useReadyDesktopLocalThread } from "@/features/agents/lib/desktopLocal"
-import { Skeleton } from "@/components/ui/skeleton"
+import { PaneSkeleton } from "@/features/agents/components/PaneSkeleton"
 import {
   ensureThreadLoad,
   threadDetailFailed,
@@ -42,11 +42,7 @@ function LocalAgentThreadPage() {
     return <Navigate to="/agents" />
   }
   if (threadQuery.isPending) {
-    return (
-      <main className="flex min-w-0 flex-1 items-center justify-center p-6">
-        <Skeleton className="h-40 w-full max-w-md" />
-      </main>
-    )
+    return <PaneSkeleton />
   }
   if (threadQuery.isError || !threadQuery.data) {
     return <Navigate to="/agents" />

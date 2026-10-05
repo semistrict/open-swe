@@ -3,7 +3,7 @@ import { LoaderCircle } from "lucide-react"
 
 import { useIsInAgentThreadStream } from "@/features/agents/lib/provider/useIsInAgentThreadStream"
 import { cn } from "@/lib/utils"
-import { useThreadSource } from "@/features/agents/lib/threadSource/ThreadSourceProvider"
+import { useThreadSource } from "@/features/agents/lib/threadSource/context"
 
 export interface ActiveRun {
   threadId: string

@@ -107,6 +107,8 @@ export interface ToolExecutionChunk {
   input?: Record<string, unknown>
   status: AcpToolStatus
   output?: string
+  /** Images the tool returned (a read of a PNG, say), shown inline. */
+  images?: Array<AnyImageChunk>
   /**
    * Fetches the call's full output, for sources that only hold a preview (the
    * transcript log keeps large outputs out of its snapshot). Present only when
@@ -214,10 +216,16 @@ export interface Message {
   structuredSenderNote?: string
   structuredSenderIsBot?: boolean
   structuredSurface?: string
+  /** Dashboard login of a person who sent this message from the web. */
+  senderLogin?: string
   /** Id of the user message that opened this agent run and keys its diff artifact. */
   turnKey?: string
   /** Timestamp of the first message in an agent turn; used to derive work duration. */
   startedAt?: string
+  /** The person stopped the run before this agent turn finished. */
+  stopped?: boolean
+  /** A web message whose sender's name the transcript has not filled in yet. */
+  senderPending?: boolean
   timestampIsFallback?: boolean
   chunks: Array<Chunk>
   hidden?: boolean

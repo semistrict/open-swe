@@ -21,18 +21,34 @@ function messageIds(messages: Array<Message>): Set<string> {
   return new Set(messages.map((message) => message.id))
 }
 
+/**
+ * Optimistic rows for messages the transcript has not echoed yet. They carry
+ * the sender attribution of the viewer's latest message in the thread, so the
+ * echo replaces a row of the same shape instead of growing it.
+ */
 export function visiblePendingMessages(
   pendingMessages: Array<PendingThreadMessage> | undefined,
-  messages: Array<Message>
+  messages: Array<Message>,
+  login?: string
 ): Array<Message> {
   const persistedIds = messageIds(messages)
+  const own =
+    login === undefined
+      ? undefined
+      : messages.findLast((message) => message.senderLogin === login)
   return (pendingMessages ?? [])
     .filter((message) => !persistedIds.has(message.id))
     .map((message) => ({
       id: message.id,
       author: "user",
       timestamp: new Date(message.createdAt).toISOString(),
-      timestampIsFallback: true,
+      ...(own && {
+        senderLogin: own.senderLogin,
+        structuredSenderId: own.structuredSenderId,
+        structuredSenderKind: own.structuredSenderKind,
+        structuredSenderName: own.structuredSenderName,
+        structuredSurface: own.structuredSurface,
+      }),
       deliveryStatus: message.status,
       deliveryError: message.error,
       optimistic: true,

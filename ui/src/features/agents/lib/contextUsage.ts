@@ -1,4 +1,3 @@
-import { AIMessage } from "@langchain/core/messages"
 import type { BaseMessage } from "@langchain/core/messages"
 
 interface UsageMetadata {
@@ -28,7 +27,9 @@ export function latestContextTokens(
 ): number | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i]
-    if (!message || !AIMessage.isInstance(message)) continue
+    // `AIMessage.isInstance`, without importing @langchain/core (and langsmith
+    // with it) into the composer, which formats token counts from here.
+    if (message?.type !== "ai") continue
     const usage = (message as unknown as { usage_metadata?: unknown })
       .usage_metadata
     const tokens = contextTokensFromUsageMetadata(usage)

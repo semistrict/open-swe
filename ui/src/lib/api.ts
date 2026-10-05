@@ -228,6 +228,10 @@ export interface OptionsPayload {
   default_agent_subagent_reasoning_effort: string
 }
 
+export interface ConciergeThread {
+  thread_id: string | null
+}
+
 export interface Profile {
   experimental_assistant_ui?: boolean | null
   experimental_background_callbacks?: boolean | null
@@ -1353,10 +1357,11 @@ export const api = {
     request<OptionsPayload>(
       `/options?workspace=${encodeURIComponent(workspace)}`
     ),
-  concierge: () =>
-    request<{ thread_id: string | null; channel_id: string | null }>(
-      "/slack/concierge"
-    ),
+  /** The concierge conversation, or null before it is first opened. */
+  concierge: () => request<ConciergeThread>("/slack/concierge"),
+  /** Opens the concierge conversation, creating it on first use. */
+  openConcierge: () =>
+    request<ConciergeThread>("/slack/concierge", { method: "POST" }),
   profile: () => request<Profile>("/profile"),
   dismissSlackOnboarding: () =>
     request<Profile>("/profile/slack-onboarding-dismissal", { method: "POST" }),

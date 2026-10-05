@@ -1,4 +1,7 @@
-.PHONY: all format format-check lint typecheck test tests integration_tests help run dev dev-ui postgres migration tunnel web build-dashboard desktop install-desktop install-checkout swagger cli
+.PHONY: all format format-check lint typecheck test tests integration_tests help run dev-init chatgpt-login dev dev-ui postgres postgres-down migration tunnel web build-dashboard desktop install-desktop install-checkout swagger cli
+
+# Kept for compatibility: `mise run <task>` (mise.toml) is the recommended way in. Each mise
+# task runs the target of the same name here with the pinned Node, pnpm, and uv.
 
 # Default target executed when no arguments are given to make.
 all: help
@@ -7,20 +10,50 @@ all: help
 # DEVELOPMENT
 ######################
 
+# Per-checkout local state: the Postgres data and port, and the local sandbox root. It lives
+# outside the checkout, where the agent's edits cannot trigger langgraph dev's reloader, and
+# apart for every worktree, so they never share a database, a migration history, or a clone.
+DEV_STATE_KEY := $(shell printf %s '$(CURDIR)' | cksum | cut -d' ' -f1)
+DEV_STATE_DIR := $(HOME)/.open-swe/$(notdir $(CURDIR))-$(DEV_STATE_KEY)
+LOCAL_POSTGRES_PORT := $(shell cat '$(DEV_STATE_DIR)/postgres-port' 2>/dev/null)
+COMPOSE := OPEN_SWE_POSTGRES_PORT=$(LOCAL_POSTGRES_PORT) OPEN_SWE_POSTGRES_DATA='$(DEV_STATE_DIR)/postgres' \
+	docker compose -p open-swe-$(DEV_STATE_KEY)
+
+# One-time setup of a checkout or worktree: dependencies, .env (copied from the primary
+# checkout or .env.example, with generated secrets), and its Postgres container. Rerunnable.
+dev-init:
+	@DEV_STATE_DIR='$(DEV_STATE_DIR)' ./scripts/dev_init.sh
+
+# ChatGPT sign-in for OpenAI models without an API key; writes the token store that
+# OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE names. The backend refreshes it from then on.
+ifeq ($(origin OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE),undefined)
+OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE := $(shell sh scripts/dotenv_value.sh .env OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE)
+endif
+chatgpt-login:
+	uv run python scripts/chatgpt_login.py "$(OPEN_SWE_OPENAI_OAUTH_TOKEN_FILE)"
+
 # Local PostgreSQL. An explicit POSTGRES_URI (shell environment, or the gitignored .env
-# that langgraph dev loads) is left alone; without one, `dev` starts a postgres:16 container
-# on loopback port 5433 with a named volume, so `docker rm` does not lose local data.
+# that langgraph dev loads) is left alone; without one, `dev` starts this checkout's own
+# postgres:16 container, on loopback at the port dev-init picked, with its data in DEV_STATE_DIR.
+# langgraph dev applies .env over the environment, so either value set there wins.
 ifeq ($(origin POSTGRES_URI),undefined)
 POSTGRES_URI := $(shell sh scripts/dotenv_value.sh .env POSTGRES_URI)
 endif
+dev: export POSTGRES_URI := $(or $(POSTGRES_URI),postgresql://postgres:postgres@127.0.0.1:$(LOCAL_POSTGRES_PORT)/postgres)
+dev: export LOCAL_SANDBOX_ROOT_DIR ?= $(DEV_STATE_DIR)/sandbox
 dev: $(if $(POSTGRES_URI),,postgres)
+	@test -e .env || { echo 'No .env: run mise run dev-init first.' >&2; exit 1; }
 	@if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:2024 -sTCP:LISTEN >/dev/null 2>&1; then \
 		echo 'Port 2024 is already in use (a stale container or another backend?):' >&2; \
 		lsof -nP -iTCP:2024 -sTCP:LISTEN >&2; exit 1; fi
 	uv run langgraph dev --no-browser --port 2024 --n-jobs-per-worker 10
 
 postgres:
-	docker compose up -d --wait postgres
+	@test -n "$(LOCAL_POSTGRES_PORT)" || { echo 'No Postgres port for this checkout: run mise run dev-init first.' >&2; exit 1; }
+	$(COMPOSE) up -d --wait postgres
+
+postgres-down:
+	$(COMPOSE) down
 
 migration:
 	uv run python scripts/new_migration.py "$(m)"
@@ -32,6 +65,7 @@ dev-ui:
 	$(MAKE) --no-print-directory -j2 web dev DASHBOARD_DEV_SERVER_URL=http://localhost:3000 TURBO_UI=stream
 
 web:
+	@test -d node_modules || { echo 'No node_modules: run mise run dev-init first.' >&2; exit 1; }
 	pnpm run dev
 
 # Public URL for GitHub and Slack webhooks while developing (docs/DEVELOPMENT.md, step 3).
@@ -44,7 +78,7 @@ tunnel:
 	$(eval DOMAIN := $(shell DOMAIN="$(NGROK_DOMAIN)"; DOMAIN="$${DOMAIN#https://}"; DOMAIN="$${DOMAIN#http://}"; echo "$${DOMAIN%/}"))
 	ngrok http 2024 --url https://$(DOMAIN) --traffic-policy-file examples/ngrok/webhooks-only.yml
 
-# Build the dashboard into ui/.output/public; `make dev` then serves it at /.
+# Build the dashboard into ui/.output/public; `mise run dev` then serves it at /.
 # With a LangGraph http.mount_prefix, pass DASHBOARD_BASE_PATH=<prefix>/ so the
 # build's asset URLs and router match where the server mounts it.
 build-dashboard:
@@ -132,10 +166,13 @@ typecheck:
 ######################
 
 help:
+	@echo 'Prefer `mise run <task>` (see `mise tasks`); these targets remain for compatibility.'
 	@echo '----'
+	@echo 'dev-init                     - one-time setup of this checkout: dependencies, .env, its PostgreSQL container'
+	@echo 'chatgpt-login                - sign in with ChatGPT for OpenAI models without an API key'
 	@echo 'dev                          - run LangGraph dev server (starts the local PostgreSQL container unless POSTGRES_URI is set)'
 	@echo 'dev-ui                       - Vite dev server plus the LangGraph dev server fronting it (UI hot reload on :2024)'
-	@echo 'postgres                     - start the local PostgreSQL container on 127.0.0.1:5433'
+	@echo 'postgres, postgres-down      - start or stop this checkout'"'"'s PostgreSQL container'
 	@echo 'migration m="..."            - create the next database migration'
 	@echo 'web                          - run the dashboard web server'
 	@echo 'tunnel                       - ngrok tunnel to :2024 on NGROK_DOMAIN, webhooks only (any other tunnel works too)'
