@@ -97,6 +97,26 @@ The webServer is reused locally, so re-running a single spec against a warm
 pnpm exec playwright test tests/full_flow.spec.ts
 ```
 
+## Perf budgets
+
+`perf_budgets.spec.ts` drives a few everyday flows (first load, opening a
+hovered thread, switching threads, sitting on a thread) and counts the work
+each one does: React commits, layout shifts (with what moved), first-load
+script and style kilobytes, and transcript requests after a click. The counts
+come out the same on every run of a build, unlike timings, which it only
+reports. Each count has a ceiling in `perf-budgets.json`; a run over one fails
+and says which elements shifted or which scripts are biggest.
+
+A ceiling only comes down. When a change makes a flow cheaper, lock it in:
+
+```bash
+E2E_PERF_RATCHET=1 pnpm exec playwright test tests/perf_budgets.spec.ts
+```
+
+That rewrites each ceiling to the measurement plus a little headroom (commits
+move by a few with response order; bundle size gets 2%). Raising one is a hand
+edit, so it shows up in review with the change that needed it.
+
 ## Artifacts (replay a run)
 
 Recording costs real time on every spec, so browser tests keep a **trace**

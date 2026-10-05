@@ -1,0 +1,22 @@
+{
+  "first load": {
+    "reactCommits": 31,
+    "layoutShifts": 0,
+    "scriptKB": 3450,
+    "criticalScriptKB": 3450,
+    "styleKB": 188
+  },
+  "open a hovered thread": {
+    "reactCommits": 20,
+    "layoutShifts": 0,
+    "transcriptRequests": 0
+  },
+  "sit on a thread": {
+    "reactCommits": 4,
+    "layoutShifts": 0
+  },
+  "switch threads": {
+    "reactCommits": 21,
+    "layoutShifts": 0
+  }
+}

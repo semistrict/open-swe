@@ -14,6 +14,7 @@ Jank is what makes the dashboard feel lower quality without being a bug: a frame
 1. Read [TASTE.md](TASTE.md) before writing code. Done when every rule that touches the surface you are changing shapes your plan.
 2. Build the change.
 3. Flinch the flows you touched yourself (below). Done when a fresh flinch of each flow comes back clean: every finding in `report.md` and every glitch in `video-review.md` is fixed, or shown in the frames to be a replay artifact or intended.
+4. Run the perf budgets (`tests/e2e/perf_budgets.spec.ts`, see the e2e README). Done when it passes; when your change made a flow cheaper, ratchet its ceilings down in the same commit. A fix for a flinch on one of its flows belongs there as a ceiling, so it stays fixed.
 
 ## When the user flinches
 
