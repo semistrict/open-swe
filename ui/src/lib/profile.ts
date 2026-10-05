@@ -1,4 +1,5 @@
 import {
+  queryOptions,
   useMutation,
   useMutationState,
   useQuery,
@@ -18,6 +19,9 @@ const profileQueryKey = (login: string | undefined) => [
   "profile",
   login ?? null,
 ]
+
+export const profileQueryOptions = (login: string | undefined) =>
+  queryOptions({ queryKey: profileQueryKey(login), queryFn: api.profile })
 
 const saveProfileMutationKey = (login: string | undefined) => [
   "saveProfile",
@@ -55,8 +59,7 @@ export function useProfile() {
     select: (m) => m.state.variables as ProfilePatch,
   })
   return useQuery({
-    queryKey: profileQueryKey(login),
-    queryFn: api.profile,
+    ...profileQueryOptions(login),
     enabled: !!session.data,
     select: (profile) => pending.reduce(applyProfileWrite, profile),
   })
