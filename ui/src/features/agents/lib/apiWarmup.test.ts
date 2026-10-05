@@ -123,6 +123,30 @@ describe("apiWarmupScript", () => {
     expect(window.fetch).toBe(original)
   })
 
+  // A thread opened just as its run is dispatched has no transcript yet, so
+  // the warmed read 404s; handing that over left the thread empty.
+  it("lets the app ask again for a warmed read that failed", async () => {
+    const transcriptUrl = await recordedUrl(() => fetchTranscript(THREAD_ID))
+    setReadyState("loading")
+    let transcriptReads = 0
+    const original = vi.fn((input: RequestInfo | URL) => {
+      if (absolute(String(input)) !== transcriptUrl)
+        return Promise.resolve(new Response("{}"))
+      transcriptReads += 1
+      return Promise.resolve(
+        new Response("{}", { status: transcriptReads === 1 ? 404 : 200 })
+      )
+    })
+    vi.stubGlobal("fetch", original)
+
+    run(apiWarmupScript(`/agents/${THREAD_ID}`)!)
+    await Promise.resolve()
+
+    const response = await window.fetch(transcriptUrl)
+    expect(response.status).toBe(200)
+    expect(transcriptReads).toBe(2)
+  })
+
   it("passes unrelated requests through", async () => {
     setReadyState("loading")
     const original = stubFetch()

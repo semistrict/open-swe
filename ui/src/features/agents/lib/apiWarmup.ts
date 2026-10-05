@@ -60,7 +60,17 @@ function warmApiRequests(
   for (const url of targets) {
     const href = new URL(url, location.href).href
     const request = fetch(href, { credentials: "include" })
-    request.catch(() => {})
+    // A failed read is not handed over: the app asks again when it needs it.
+    // A thread opened just as its run is dispatched has no transcript yet,
+    // and the warmed 404 left its page empty.
+    request.then(
+      (response) => {
+        if (response.ok || pending.get(href) !== request) return
+        pending.delete(href)
+        if (pending.size === 0) release()
+      },
+      () => {}
+    )
     pending.set(href, request)
   }
 
