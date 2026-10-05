@@ -1,15 +1,21 @@
 import {
   useInfiniteQuery,
   useMutation,
+  useMutationState,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { useNavigate } from "@tanstack/react-router"
-import { useEffect, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef } from "react"
 
 import { agentsApi } from "./api"
-import type { InfiniteData, QueryClient, QueryKey } from "@tanstack/react-query"
+import type {
+  InfiniteData,
+  Query,
+  QueryClient,
+  QueryKey,
+} from "@tanstack/react-query"
 import type {
   ScheduleUpdateRequest,
   ThreadsPage,
@@ -219,24 +225,33 @@ export async function beginAgentThreadUpdate(
   threadId: string,
   apply: () => void
 ): Promise<AgentThreadOptimisticUpdate> {
+  // Only a refetch can land over the optimistic write. A first load is left
+  // running: cancelling it returns the query to pending with nothing to show,
+  // and nothing restarts it until the mutation settles.
+  const refetching = { predicate: (query: Query) => query.state.data != null }
   await Promise.all([
     queryClient.cancelQueries({
       queryKey: agentThreadKeys.detail(threadId),
       exact: true,
+      ...refetching,
     }),
     queryClient.cancelQueries({
       queryKey: agentThreadKeys.sidebarActive(threadId),
       exact: true,
+      ...refetching,
     }),
     queryClient.cancelQueries({
       queryKey: agentThreadKeys.pinned,
       exact: true,
+      ...refetching,
     }),
     queryClient.cancelQueries({
       queryKey: ["agent-threads", "lists", "infinite-pages"],
+      ...refetching,
     }),
     queryClient.cancelQueries({
       queryKey: ["agent-threads", "lists", "page"],
+      ...refetching,
     }),
   ])
   const previous = snapshotAgentThreadQueries(queryClient, threadId)
@@ -393,6 +408,7 @@ export const agentScheduleKeys = {
 
 export const agentMutationKeys = {
   pin: ["agent-threads", "pin"] as const,
+  rename: ["agent-threads", "rename"] as const,
   resolve: ["agent-threads", "resolve"] as const,
   updateSchedule: ["agent-schedules", "update"] as const,
   workflowDecision: (threadId: string) =>
@@ -590,9 +606,15 @@ function sidebarPageParams({
 }
 
 export function useSidebarPinnedThreads({ enabled = true } = {}) {
+  const pendingTitles = usePendingThreadTitles()
   return useQuery({
     queryKey: agentThreadKeys.pinned,
     queryFn: agentsApi.listPinnedThreads,
+    select: useCallback(
+      (threads: Array<AgentThread>) =>
+        withPendingTitles(threads, pendingTitles),
+      [pendingTitles]
+    ),
     enabled,
     refetchOnMount: "always",
     refetchOnWindowFocus: "always",
@@ -636,6 +658,7 @@ export function useSidebarActiveThread({
   enabled?: boolean
 }): AgentThread | undefined {
   const loaded = loadedThreads.some((thread) => thread.id === activeThreadId)
+  const pendingTitles = usePendingThreadTitles()
   const query = useQuery({
     queryKey: agentThreadKeys.sidebarActive(activeThreadId ?? ""),
     queryFn: () => agentsApi.getThread(activeThreadId!, { markViewed: false }),
@@ -646,8 +669,8 @@ export function useSidebarActiveThread({
       current.state.data?.status === "running" ? 2000 : false,
     retry: false,
   })
-  return !loaded && (!query.data?.resolved || includeResolved)
-    ? query.data
+  return query.data && !loaded && (!query.data.resolved || includeResolved)
+    ? withPendingTitle(query.data, pendingTitles)
     : undefined
 }
 
@@ -660,8 +683,17 @@ function useSidebarThreadPages(
     enabled: enabled && hydrated,
     pollWhileRunning: true,
   })
+  const pendingTitles = usePendingThreadTitles()
+  const items = useMemo(
+    () =>
+      withPendingTitles(
+        query.data?.pages.flatMap((page) => page.items) ?? [],
+        pendingTitles
+      ),
+    [pendingTitles, query.data]
+  )
   return {
-    items: query.data?.pages.flatMap((page) => page.items) ?? [],
+    items,
     hasMore: query.hasNextPage,
     isFetchingNextPage: query.isFetchingNextPage,
     isPending: query.isPending,
@@ -1165,7 +1197,8 @@ export function useRenameAgentThread() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (vars: { threadId: string; title: string }) =>
+    mutationKey: agentMutationKeys.rename,
+    mutationFn: (vars: RenameVariables) =>
       agentsApi.renameThread(vars.threadId, vars.title),
     meta: { errorTitle: "Couldn't rename thread" },
     onMutate: (vars) =>
@@ -1175,9 +1208,54 @@ export function useRenameAgentThread() {
     onError: (_error, _vars, context) => {
       if (context) restoreAgentThreadQueries(queryClient, context)
     },
-    onSuccess: (thread) => storeAgentThread(queryClient, thread),
+    onSuccess: (thread) => {
+      storeAgentThread(queryClient, thread)
+      // Lists that loaded mid-rename showed the new title only through the
+      // pending overlay; write it in before the overlay goes away.
+      setAgentThreadTitle(queryClient, thread.id, thread.title)
+    },
     onSettled: () => invalidateAgentThreadLists(queryClient),
   })
+}
+
+interface RenameVariables {
+  threadId: string
+  title: string
+}
+
+/**
+ * Titles of renames still in flight, by thread. The optimistic write reaches
+ * only the lists cached when a rename starts; a list that loads or refreshes
+ * before it finishes still carries the old title, so readers lay these over.
+ */
+function usePendingThreadTitles(): ReadonlyMap<string, string> {
+  const pending = useMutationState({
+    filters: { mutationKey: agentMutationKeys.rename, status: "pending" },
+    select: (mutation) => mutation.state.variables as RenameVariables,
+  })
+  return useMemo(
+    () => new Map(pending.map((vars) => [vars.threadId, vars.title])),
+    [pending]
+  )
+}
+
+function withPendingTitle(
+  thread: AgentThread,
+  titles: ReadonlyMap<string, string>
+): AgentThread {
+  const title = titles.get(thread.id)
+  return title === undefined || title === thread.title
+    ? thread
+    : { ...thread, title }
+}
+
+function withPendingTitles(
+  threads: Array<AgentThread>,
+  titles: ReadonlyMap<string, string>
+): Array<AgentThread> {
+  return titles.size === 0
+    ? threads
+    : threads.map((thread) => withPendingTitle(thread, titles))
 }
 
 export function useResolveAgentThread() {
