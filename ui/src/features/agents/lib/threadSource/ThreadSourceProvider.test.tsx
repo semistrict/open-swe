@@ -3,7 +3,8 @@ import { cleanup, render, screen, act } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest"
 
 import { setUseStreamPreference } from "@/lib/streamPreference"
-import { ThreadSourceProvider, useThreadSource } from "./ThreadSourceProvider"
+import { useThreadSource } from "./context"
+import { ThreadSourceProvider } from "./ThreadSourceProvider"
 
 vi.mock("./useAgentStreamSource", () => ({
   useAgentStreamSource: () => ({ kind: "stream" }),

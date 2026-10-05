@@ -10,7 +10,7 @@ import {
   agentThreadKeys,
   setAgentThreadStatus,
 } from "@/features/agents/lib/queries"
-import { useThreadSource } from "@/features/agents/lib/threadSource/ThreadSourceProvider"
+import { useThreadSource } from "@/features/agents/lib/threadSource/context"
 import { modelConfigurable } from "@/features/agents/lib/stream/promptMessage"
 import { reportError } from "@/lib/errorReporting"
 
