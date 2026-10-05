@@ -26,6 +26,10 @@ const CONNECT_PROVIDERS = new Set(["slack", "notion"]);
 function resolveAppRuntime({ argv, isPackaged, appDataPath, buildProfile }) {
   const isDevelopment =
     !isPackaged || argv.includes("--dev") || buildProfile === "development";
+  // An explicit profile wins, so a test run never shares one with an app the
+  // developer has open: on macOS the default sits under Application Support
+  // whatever HOME says.
+  const explicitUserData = argumentValue(argv, "--user-data-dir");
   return {
     isDevelopment,
     receivesUpdates: !isDevelopment,
@@ -33,21 +37,24 @@ function resolveAppRuntime({ argv, isPackaged, appDataPath, buildProfile }) {
     appUserModelId: isDevelopment
       ? DEVELOPMENT_APP_USER_MODEL_ID
       : APP_USER_MODEL_ID,
-    userDataPath: isDevelopment
-      ? path.join(appDataPath, DEVELOPMENT_USER_DATA_DIRECTORY)
-      : null,
+    userDataPath:
+      explicitUserData ??
+      (isDevelopment
+        ? path.join(appDataPath, DEVELOPMENT_USER_DATA_DIRECTORY)
+        : null),
   };
 }
 
-function cliBackendUrl(argv) {
-  for (const name of ["--backend-url", "--url"]) {
-    const inline = argv.find((argument) => argument.startsWith(`${name}=`));
-    if (inline) return inline.slice(name.length + 1);
+/** The value of `--name=value` or `--name value`. */
+function argumentValue(argv, name) {
+  const inline = argv.find((argument) => argument.startsWith(`${name}=`));
+  if (inline) return inline.slice(name.length + 1);
+  const index = argv.indexOf(name);
+  return index === -1 ? undefined : argv[index + 1];
+}
 
-    const index = argv.indexOf(name);
-    if (index !== -1) return argv[index + 1];
-  }
-  return undefined;
+function cliBackendUrl(argv) {
+  return argumentValue(argv, "--backend-url") ?? argumentValue(argv, "--url");
 }
 
 function validateBackendUrl(value) {

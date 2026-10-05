@@ -74,6 +74,9 @@ test("Desktop runs a local thread on the Open SWE graph against the shared fakes
       desktopRoot,
       "--dev",
       `--backend-url=${baseURL}`,
+      // Its own profile: on macOS the default ignores HOME and would be the
+      // developer's "Open SWE Development" one, single-instance lock included.
+      `--user-data-dir=${join(stateRoot, "user-data")}`,
     ],
     cwd: repoRoot,
     env: {

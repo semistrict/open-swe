@@ -66,6 +66,27 @@ test("uses an isolated app profile for development runs", () => {
   );
 });
 
+test("keeps an explicit user data directory in either profile", () => {
+  const appDataPath = path.join("/tmp", "open-swe-app-data");
+  const userData = path.join("/tmp", "e2e-profile");
+  assert.equal(
+    resolveAppRuntime({
+      argv: ["--dev", `--user-data-dir=${userData}`],
+      isPackaged: false,
+      appDataPath,
+    }).userDataPath,
+    userData,
+  );
+  assert.equal(
+    resolveAppRuntime({
+      argv: ["--user-data-dir", userData],
+      isPackaged: true,
+      appDataPath,
+    }).userDataPath,
+    userData,
+  );
+});
+
 test("requires backend configuration in release builds", () => {
   assert.equal(
     resolveBackendUrl({ argv: [], env: {}, isDevelopment: false }),
