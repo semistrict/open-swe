@@ -18,6 +18,7 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from html import escape
 from pathlib import Path
@@ -102,6 +103,29 @@ if os.environ.get("E2E_EXIT_WHEN_ORPHANED"):
         os._exit(0)
 
     threading.Thread(target=_exit_when_orphaned, daemon=True).start()
+
+
+# Fails the next profile read, which on a page load is the app server's render.
+# That stands in for a deployment where the server cannot resolve the profile
+# (a cross-origin API), so the browser loads it itself and a spec can hold or
+# rewrite that request with `page.route`.
+PROFILE_UNAVAILABLE_ONCE = {"armed": False}
+
+
+@app.post("/control/profile-unavailable-once")
+async def control_profile_unavailable_once() -> JSONResponse:
+    PROFILE_UNAVAILABLE_ONCE["armed"] = True
+    return JSONResponse({"ok": True})
+
+
+@app.middleware("http")
+async def fail_profile_once(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    if request.url.path == "/dashboard/api/profile" and PROFILE_UNAVAILABLE_ONCE["armed"]:
+        PROFILE_UNAVAILABLE_ONCE["armed"] = False
+        return JSONResponse({"detail": "Profile unavailable to the server render"}, status_code=503)
+    return await call_next(request)
 
 
 # --- control + Slack compose (the test driver) -----------------------------

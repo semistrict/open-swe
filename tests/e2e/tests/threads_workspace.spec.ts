@@ -8,6 +8,7 @@ import {
 
 import {
   dismissOnboardingIfShown,
+  loadProfileInBrowser,
   waitForThreadIdle,
 } from "./helpers/dashboard";
 
@@ -473,6 +474,7 @@ test.describe("threads workspace", () => {
       });
     });
 
+    await loadProfileInBrowser(page);
     const profileGate = deferred();
     const profileStarted = deferred();
     const profileFinished = deferred();

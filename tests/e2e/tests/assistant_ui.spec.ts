@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   SAME_USER,
+  loadProfileInBrowser,
   loginAs,
   typeIntoComposer,
   waitForStateToContain,
@@ -286,6 +287,7 @@ test("creates a thread, sends a follow-up, and hydrates the experimental transcr
 test("preserves no-project selection despite a default repository", async ({
   page,
 }) => {
+  await loadProfileInBrowser(page);
   await page.route("**/dashboard/api/profile", async (route) => {
     const response = await route.fetch();
     const profile = await response.json();

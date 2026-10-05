@@ -30,6 +30,17 @@ export async function loginAs(
   expect(res.ok()).toBeTruthy();
 }
 
+/**
+ * Make the browser load the profile itself on the next page load. The app
+ * server resolves it while rendering, so a spec that holds or rewrites the
+ * browser's profile request would otherwise never see one; the harness fails
+ * the server's read once, as a deployment with a cross-origin API does.
+ */
+export async function loadProfileInBrowser(page: Page) {
+  const res = await page.request.post("/control/profile-unavailable-once");
+  expect(res.ok()).toBeTruthy();
+}
+
 export async function optIntoQueue(page: Page) {
   const saved = await page.request.get("/dashboard/api/me/preferences");
   expect(saved.ok()).toBeTruthy();
