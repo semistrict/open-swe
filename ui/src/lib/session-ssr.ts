@@ -5,6 +5,7 @@ import { getRequestUrl } from "@tanstack/react-start/server"
 import { api } from "./api"
 import { isCrossOriginApiBase } from "./api-base"
 import { sanitizeAuthRedirect } from "./auth-redirect-core"
+import { dashboardRequestOrigin } from "./dashboard-fetch"
 import { profileQueryOptions } from "./profile"
 import { sessionQueryOptions } from "./session"
 import type { QueryClient } from "@tanstack/react-query"
@@ -42,6 +43,10 @@ export const resolveSessionOnServer = createIsomorphicFn()
     ) {
       return
     }
+
+    // Without DASHBOARD_API_URL (the Vite dev server behind `mise run dev-ui`)
+    // a server render has no backend to call; every read would fail.
+    if (!dashboardRequestOrigin()) return
 
     // The profile decides parts of the shell, such as whether the sidebar
     // lists Concierge, so it is resolved here too instead of after hydration,
