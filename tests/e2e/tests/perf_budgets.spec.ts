@@ -48,9 +48,30 @@ test.describe("perf budgets", () => {
     await page.close();
   });
 
+  // Threads other specs left running keep the sidebar polling, and a poll
+  // that brings news should render, so wait them out before measuring.
+  async function waitForNoRunningThreads(page: Page) {
+    await expect
+      .poll(
+        async () => {
+          const res = await page.request.get(
+            "/dashboard/api/threads/page?limit=100&offset=0&scope=all",
+          );
+          expect(res.ok()).toBeTruthy();
+          const { items } = (await res.json()) as {
+            items: Array<{ status?: string }>;
+          };
+          return items.filter((thread) => thread.status === "running").length;
+        },
+        { timeout: 60_000, intervals: [1_000] },
+      )
+      .toBe(0);
+  }
+
   async function openHome(page: Page) {
     await installPerfProbe(page);
     await loginAs(page, SAME_USER);
+    await waitForNoRunningThreads(page);
     await page.goto("/agents");
     await expect(page.getByTestId("composer-editor")).toBeVisible();
     await expect(sidebarLink(page, first)).toBeVisible();

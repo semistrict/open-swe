@@ -7,7 +7,7 @@
     "styleKB": 187
   },
   "open a hovered thread": {
-    "reactCommits": 20,
+    "reactCommits": 24,
     "layoutShifts": 0,
     "transcriptRequests": 0
   },
@@ -16,7 +16,7 @@
     "layoutShifts": 0
   },
   "switch threads": {
-    "reactCommits": 20,
+    "reactCommits": 25,
     "layoutShifts": 0
   },
   "first load, returning": {

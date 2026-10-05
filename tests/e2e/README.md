@@ -121,7 +121,9 @@ edit, so it shows up in review with the change that needed it.
 
 Commit counts grow with what the sidebar lists, so measure against a fresh
 database, as CI does: a Postgres that earlier runs filled reports more work
-than CI would and ratchets nothing. The e2e server itself keeps no state
+than CI would and ratchets nothing. CI's own runs share one database per
+shard with the specs before them, so its counts sit a few above a fresh
+run's; the ceilings are set from CI's. The e2e server itself keeps no state
 between runs (`serve.py` starts it without `langgraph dev`'s file persistence,
 which shares `.langgraph_api/` with `mise run dev` in the repo root).
 
