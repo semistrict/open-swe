@@ -77,6 +77,8 @@ The causes so far were not in the component that looked wrong, but in two source
 - An optimistic row shaped differently from the server's echo, or an indicator inserted above content and removed later.
 - Work scheduled with `requestAnimationFrame` from a `ResizeObserver` callback, which lands a frame late.
 - A cached status trusted for a decision after it went stale, such as steering a send into a run that had already ended.
+- The server rendering something the browser decides differently: state initialized from localStorage makes hydration disagree (React error #418, reported via `window.reportError`, i.e. a Playwright `pageerror`, not a console message) and React redoes the page; a server-rendered contenteditable takes typing that the editor then wipes. Give such a route `ssr: false`, or move the state where the server can read it.
+- `React.lazy` suspending on its first render even when the module is already loaded, which blanks what it replaces for a frame; use `usePreloadedModule`.
 - One cache entry written by two paths: an optimistic seed overwritten by a background seeding pass (the sidebar copying list summaries into thread details).
 
 [TASTE.md](TASTE.md) has each instance with its fix.
