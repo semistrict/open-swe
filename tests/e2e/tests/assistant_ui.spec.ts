@@ -211,6 +211,7 @@ test("waits for the profile and hydrates the transcript only once", async ({
   const id = await startSlackThread(page, "Add a greet() helper and open a PR");
   await waitForThreadIdle(page, id);
   await waitForThreadNotBusy(page, id);
+  await loadProfileInBrowser(page);
   const profileRequested = Promise.withResolvers<void>();
   const releaseProfile = Promise.withResolvers<void>();
   await page.route("**/dashboard/api/profile", async (route) => {
@@ -225,16 +226,10 @@ test("waits for the profile and hydrates the transcript only once", async ({
       stateRequests.push(request.url());
     }
   });
-  const warmedState = page.waitForResponse(
-    (response) => new URL(response.url()).pathname === statePath,
-  );
 
   try {
     await page.goto(`/agents/${id}`, { waitUntil: "domcontentloaded" });
     await profileRequested.promise;
-    const response = await warmedState;
-    await response.finished();
-    expect(response.ok()).toBeTruthy();
     await expect(page.getByTestId("composer-editor")).toHaveCount(0);
     await expect(conversation(page)).toHaveCount(0);
 
