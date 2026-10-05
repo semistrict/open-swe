@@ -2,8 +2,8 @@
   "first load": {
     "reactCommits": 36,
     "layoutShifts": 0,
-    "scriptKB": 3450,
-    "criticalScriptKB": 3450,
+    "scriptKB": 3444,
+    "criticalScriptKB": 1784,
     "styleKB": 187
   },
   "open a hovered thread": {
@@ -20,7 +20,7 @@
     "layoutShifts": 0
   },
   "first load, returning": {
-    "reactCommits": 38,
+    "reactCommits": 37,
     "layoutShifts": 0
   }
 }

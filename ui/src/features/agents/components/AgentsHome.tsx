@@ -24,10 +24,8 @@ import type {
 } from "@/features/agents/components/composer/ChatComposer"
 import { AgentThreadHeader } from "@/features/agents/components/AgentThreadHeader"
 import { OnboardingDialog } from "@/features/agents/components/OnboardingDialog"
-import { Messages } from "@/features/agents/components/messages"
 import { AgentComposerDock } from "@/features/agents/components/composer/AgentComposerDock"
 import { AgentRightPanel } from "@/features/agents/components/panel/AgentRightPanel"
-import { LocalRepoRightPanel } from "@/features/agents/components/LocalRepoRightPanel"
 import {
   agentThreadKeys,
   invalidateAgentThreadLists,
@@ -56,6 +54,7 @@ import {
 } from "@/features/agents/lib/gitPanelPreferences"
 import { useTerminalGroups } from "@/features/agents/lib/terminalGroups"
 import { api } from "@/lib/api"
+import { usePreloadedModule } from "@/lib/usePreloadedModule"
 import { reportError } from "@/lib/errorReporting"
 import { useProfile, useRepos } from "@/lib/profile"
 import { useSession } from "@/lib/session"
@@ -79,6 +78,13 @@ interface PendingCloudSubmit {
   /** Stop was pressed before the run was accepted; cancel it once it is. */
   stopRequested: boolean
 }
+
+// Loaded apart from the home page: the transcript renderer (markdown, diffs,
+// approval cards) shows here only once a message is sent, and the local repo
+// panel, which carries the diff viewer, only in the desktop app.
+const loadMessages = () => import("@/features/agents/components/messages")
+const loadLocalRepoRightPanel = () =>
+  import("@/features/agents/components/LocalRepoRightPanel")
 
 export function AgentsHome({
   initialRepo,
@@ -154,6 +160,11 @@ export function AgentsHome({
   useEffect(() => {
     localRepoPathRef.current = localRepoPath
   }, [localRepoPath])
+  const Messages = usePreloadedModule(loadMessages)?.Messages
+  const LocalRepoRightPanel = usePreloadedModule(
+    loadLocalRepoRightPanel,
+    isDesktop
+  )?.LocalRepoRightPanel
   const [localRepoBranch, setLocalRepoBranch] = useState<string | null>(null)
   const [localRepoBranches, setLocalRepoBranches] = useState<
     Array<DesktopProjectRef>
@@ -682,11 +693,15 @@ export function AgentsHome({
           }
         />
         {optimisticDraftThread ? (
-          <Messages
-            messages={optimisticDraftThread.messages}
-            isStreaming
-            contentWidthClass="max-w-3xl"
-          />
+          Messages ? (
+            <Messages
+              messages={optimisticDraftThread.messages}
+              isStreaming
+              contentWidthClass="max-w-3xl"
+            />
+          ) : (
+            <div className="flex-1" />
+          )
         ) : (
           <div className="flex min-h-0 flex-1 overflow-y-auto px-3 py-6 sm:px-6 sm:py-8">
             <div className="mx-auto flex min-h-full w-full max-w-3xl flex-1 flex-col items-center justify-center gap-6">
@@ -765,12 +780,14 @@ export function AgentsHome({
         </AgentComposerDock>
       </div>
       {localRepo ? (
-        <LocalRepoRightPanel
-          scopeId={localRepo.scopeId}
-          cwd={localRepo.cwd}
-          collapsed={panelCollapsed}
-          onCollapsedChange={handlePanelCollapsedChange}
-        />
+        LocalRepoRightPanel ? (
+          <LocalRepoRightPanel
+            scopeId={localRepo.scopeId}
+            cwd={localRepo.cwd}
+            collapsed={panelCollapsed}
+            onCollapsedChange={handlePanelCollapsedChange}
+          />
+        ) : null
       ) : (
         <AgentRightPanel
           threadRef={NEW_AGENT_PANEL_REF}
