@@ -13,6 +13,7 @@ import { QueryClientProvider } from "@tanstack/react-query"
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools"
 
 import appCss from "../styles.css?url"
+import interLatin from "@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url"
 import type { QueryClient } from "@tanstack/react-query"
 import { AppCommandProvider } from "@/lib/appCommands"
 import { resolveSessionOnServer } from "@/lib/session-ssr"
@@ -75,6 +76,16 @@ export const Route = createRootRouteWithContext<{
     ],
     links: [
       { rel: "stylesheet", href: appCss },
+      // Inter is `font-display: swap`, so text first painted before it loads
+      // reflows when it arrives. Fetching it beside the stylesheet, rather
+      // than once the stylesheet is parsed, has it ready for the first paint.
+      {
+        rel: "preload",
+        href: interLatin,
+        as: "font",
+        type: "font/woff2",
+        crossOrigin: "anonymous",
+      },
       {
         rel: "manifest",
         href: `${import.meta.env.BASE_URL}manifest.webmanifest`,
