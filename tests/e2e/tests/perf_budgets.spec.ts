@@ -94,6 +94,35 @@ test.describe("perf budgets", () => {
     );
   });
 
+  // What the browser remembered from a previous visit (cached repos, an open
+  // work panel) is only known on the client; it must not make the server's
+  // render disagree with hydration or move things once it applies.
+  test("first load, returning", async ({ page }, testInfo) => {
+    await openHome(page);
+    await page.getByRole("button", { name: "Show panel" }).click();
+    await expect(
+      page.getByRole("button", { name: "Hide panel" }),
+    ).toBeVisible();
+
+    const hydrationErrors = watchHydrationErrors(page);
+    await page.reload();
+    await expect(page.getByTestId("composer-editor")).toBeVisible();
+    await expect(sidebarLink(page, first)).toBeVisible();
+    await settle(page);
+    expect(hydrationErrors).toEqual([]);
+
+    const recorded = await since(page, 0);
+    expectWithinBudget(
+      testInfo,
+      "first load, returning",
+      {
+        reactCommits: recorded.commits,
+        layoutShifts: recorded.shifts.length,
+      },
+      { shifts: recorded.shifts },
+    );
+  });
+
   test("open a hovered thread", async ({ page }, testInfo) => {
     await openHome(page);
     const prefetched = page.waitForResponse((response) =>

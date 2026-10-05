@@ -113,12 +113,16 @@ export async function installPerfProbe(page: Page): Promise<void> {
  */
 export function watchHydrationErrors(page: Page): Array<string> {
   const errors: Array<string> = [];
+  const hydration = /hydrat|Minified React error #(418|423|425)/i;
   page.on("console", (message) => {
-    if (
-      message.type() === "error" &&
-      /hydrat|Minified React error #(418|423|425)/i.test(message.text())
-    )
+    if (message.type() === "error" && hydration.test(message.text()))
       errors.push(message.text());
+  });
+  // React reports recoverable errors through `window.reportError`, which
+  // surfaces as an uncaught page error rather than a console message.
+  page.on("pageerror", (error) => {
+    if (hydration.test(`${error.message}\n${error.stack ?? ""}`))
+      errors.push(error.message);
   });
   return errors;
 }
